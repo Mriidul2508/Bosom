@@ -56,8 +56,8 @@
         const startButton = document.getElementById('start-button');
         const statusText = document.getElementById('status-text');
         const userSpeechText = document.getElementById('user-speech-text');
-        const socket = io.connect('http://' + document.domain + ':' + location.port);
-        let streamedResponse = "";
+        const socket = io.connect(window.location.origin);
+        let recognition;
         let isAISpeaking = false;
 
         socket.on('connect', () => {
@@ -91,33 +91,65 @@
             streamedResponse = "";
         });
 
+        socket.on('start_listening', () => {
+            startListening();
+        });
+
+        function startListening() {
+            if (!('webkitSpeechRecognition' in window)) {
+                alert('Speech recognition not supported in this browser.');
+                return;
+            }
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';  // Change to 'hi-IN' for Hindi if needed
+
+            recognition.onstart = () => {
+                statusText.textContent = 'BOSOM: Listening...';
+                startButton.disabled = true;
+                startButton.classList.add('pulse');
+            };
+
+            recognition.onresult = (event) => {
+                const query = event.results[0][0].transcript;
+                socket.emit('speech_recognized', { query: query });
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                statusText.textContent = 'BOSOM: Speech recognition error. Retrying...';
+                setTimeout(() => socket.emit('start_listening'), 1000);
+            };
+
+            recognition.onend = () => {
+                startButton.disabled = false;
+                startButton.classList.remove('pulse');
+            };
+
+            recognition.start();
+        }
+
         function speakInBrowser(text) {
             if ('speechSynthesis' in window) {
                 isAISpeaking = true;
-                startButton.disabled = true;
                 statusText.textContent = 'BOSOM is speaking...';
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'en-US';
                 utterance.onend = () => {
                     isAISpeaking = false;
-                    startButton.disabled = false;
                     statusText.textContent = 'BOSOM: Listening...';
-                    socket.emit('listen_command', {});
                 };
                 window.speechSynthesis.speak(utterance);
             } else {
                 console.log('Speech synthesis not supported.');
                 isAISpeaking = false;
-                startButton.disabled = false;
-                socket.emit('listen_command', {});
             }
         }
 
         startButton.addEventListener('click', () => {
             if (!isAISpeaking) {
-                userSpeechText.textContent = '';
-                streamedResponse = "";
-                socket.emit('listen_command', {});
+                socket.emit('start_listening');
             }
         });
     </script>
