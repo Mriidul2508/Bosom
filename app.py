@@ -1,5 +1,4 @@
 import speech_recognition as sr
-import pyttsx3
 import google.generativeai as genai
 import datetime
 import webbrowser
@@ -21,14 +20,7 @@ log.setLevel(logging.ERROR)
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-engine = pyttsx3.init('sapi5')
-voices = engine.getProperty('voices')
-engine.setProperty('voice', voices[0].id)
-
-def speak(audio):
-    print(f"BOSOM: {audio}")
-    engine.say(audio)
-    engine.runAndWait()
+# Removed pyttsx3 engine and speak function (TTS is browser-based)
 
 def wishMe():
     hour = int(datetime.datetime.now().hour)
