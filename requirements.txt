@@ -1,5 +1,4 @@
 speechrecognition
-pyttsx3
 google-generativeai
 flask
 flask-socketio
