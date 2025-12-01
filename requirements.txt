@@ -1,11 +1,12 @@
-﻿speechrecognition
+speechrecognition
 pyttsx3
 google-generativeai
+flask
+flask-socketio
 wikipedia
 opencv-python
-pyaudio
-Flask
-Flask-SocketIO
 python-engineio
 python-socketio
 gevent-websocket
+gunicorn
+eventlet
