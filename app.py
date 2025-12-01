@@ -1,4 +1,3 @@
-import speech_recognition as sr
 import google.generativeai as genai
 import datetime
 import webbrowser
@@ -20,8 +19,6 @@ log.setLevel(logging.ERROR)
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Removed pyttsx3 engine and speak function (TTS is browser-based)
-
 def wishMe():
     hour = int(datetime.datetime.now().hour)
     if 0 <= hour < 12:
@@ -32,7 +29,7 @@ def wishMe():
         return "Good Evening! BOSOM here to assist."
 
 def get_gemini_response(prompt):
-    api_key = os.getenv('GEMINI_API_KEY', 'YOUR_GEMINI_API_KEY')  # Use env var for security
+    api_key = os.getenv('GEMINI_API_KEY', 'YOUR_GEMINI_API_KEY')
     if not api_key or api_key == "YOUR_GEMINI_API_KEY":
         socketio.emit('final_response', {'message': "BOSOM: Gemini API key not configured."})
         return
@@ -81,7 +78,7 @@ def process_query(query):
         return "BOSOM: Opening Google..."
         
     elif 'play music' in query_lower:
-        music_dir = 'C:\\Users\\YourUser\\Music'  # Update to your local path; on cloud, this won't work
+        music_dir = 'C:\\Users\\YourUser\\Music'
         if os.path.exists(music_dir):
             os.startfile(music_dir)
             return "BOSOM: Opening your music folder."
@@ -121,7 +118,6 @@ def process_query(query):
 def index():
     return render_template('index.html')
 
-listening_in_progress = False
 continuous_mode = True
 
 @socketio.on('connect')
@@ -130,49 +126,25 @@ def handle_connect():
     emit('final_response', {'message': greeting})
     if continuous_mode:
         socketio.emit('status_update', {'message': 'BOSOM: Continuous mode active. Listening...'})
-        time.sleep(1)
-        handle_listen_command({})
+        socketio.emit('start_listening')  # Tell browser to start listening
 
-@socketio.on('listen_command')
-def handle_listen_command(json):
-    global listening_in_progress, continuous_mode
-    if not continuous_mode or listening_in_progress:
+@socketio.on('speech_recognized')
+def handle_speech_recognized(data):
+    query = data.get('query', '')
+    if not query:
         return
-    listening_in_progress = True
     
-    socketio.emit('status_update', {'message': 'BOSOM: Listening...'})
+    socketio.emit('user_speech', {'message': f'You said: "{query}"'})
+    socketio.emit('status_update', {'message': 'BOSOM: Thinking...'})
     
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        r.pause_threshold = 1
-        r.adjust_for_ambient_noise(source)
-        try:
-            audio = r.listen(source, timeout=5, phrase_time_limit=5)
-            socketio.emit('status_update', {'message': 'BOSOM: Recognizing...'})
-            query = r.recognize_google(audio, language='en-in')
-            socketio.emit('user_speech', {'message': f'You said: "{query}"'})
-            socketio.emit('status_update', {'message': 'BOSOM: Thinking...'})
-            
-            response = process_query(query)
-            if response is not None:
-                socketio.emit('final_response', {'message': response})
-        except sr.WaitTimeoutError:
-            socketio.emit('status_update', {'message': "BOSOM: No speech detected. Retrying..."})
-            time.sleep(1)
-            if continuous_mode:
-                handle_listen_command({})
-        except sr.UnknownValueError:
-            socketio.emit('status_update', {'message': "BOSOM: Didn't understand. Retrying..."})
-            time.sleep(1)
-            if continuous_mode:
-                handle_listen_command({})
-        except sr.RequestError as e:
-            socketio.emit('final_response', {'message': f"BOSOM: Request error: {e}"})
-        except Exception as e:
-            print(f"Error: {e}")
-            socketio.emit('final_response', {'message': "BOSOM: Unexpected error."})
-        finally:
-            listening_in_progress = False
+    response = process_query(query)
+    if response is not None:
+        socketio.emit('final_response', {'message': response})
+        if continuous_mode:
+            socketio.emit('start_listening')  # Restart listening in browser
+    else:
+        # For streamed responses, restart after streaming ends
+        pass
 
 if __name__ == '__main__':
     print("Starting BOSOM AI server...")
