@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 import google.generativeai as genai
 import datetime
 import webbrowser
@@ -126,7 +129,7 @@ def handle_connect():
     emit('final_response', {'message': greeting})
     if continuous_mode:
         socketio.emit('status_update', {'message': 'BOSOM: Continuous mode active. Listening...'})
-        socketio.emit('start_listening')  # Tell browser to start listening
+        socketio.emit('start_listening')
 
 @socketio.on('speech_recognized')
 def handle_speech_recognized(data):
@@ -141,9 +144,8 @@ def handle_speech_recognized(data):
     if response is not None:
         socketio.emit('final_response', {'message': response})
         if continuous_mode:
-            socketio.emit('start_listening')  # Restart listening in browser
+            socketio.emit('start_listening')
     else:
-        # For streamed responses, restart after streaming ends
         pass
 
 if __name__ == '__main__':
