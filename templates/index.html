@@ -59,6 +59,7 @@
         const socket = io.connect(window.location.origin);
         let recognition;
         let isAISpeaking = false;
+        let streamedResponse = "";
 
         socket.on('connect', () => {
             console.log('Connected to BOSOM!');
@@ -103,7 +104,7 @@
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
             recognition.interimResults = false;
-            recognition.lang = 'en-US';  // Change to 'hi-IN' for Hindi if needed
+            recognition.lang = 'en-US';
 
             recognition.onstart = () => {
                 statusText.textContent = 'BOSOM: Listening...';
