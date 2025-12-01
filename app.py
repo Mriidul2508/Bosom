@@ -165,12 +165,12 @@ def handle_listen_command(json):
             if response is not None:
                 socketio.emit('final_response', {'message': response})
         except sr.WaitTimeoutError:
-            socketio.emit('status_update', {'message': 'BOSOM: No speech detected. Retrying...'})
+            socketio.emit('status_update', {'message': "BOSOM: No speech detected. Retrying..."})
             time.sleep(1)
             if continuous_mode:
                 handle_listen_command({})
         except sr.UnknownValueError:
-            socketio.emit('status_update', {'message': 'BOSOM: Didn't understand. Retrying...'})
+            socketio.emit('status_update', {'message': "BOSOM: Didn't understand. Retrying..."})
             time.sleep(1)
             if continuous_mode:
                 handle_listen_command({})
