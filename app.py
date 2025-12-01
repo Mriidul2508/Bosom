@@ -9,9 +9,9 @@ import cv2
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import logging
+import time
 
 # Suppress logs
-import os
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
 os.environ['GRPC_LOG_SEVERITY_LEVEL'] = 'ERROR'
 
@@ -39,18 +39,15 @@ def wishMe():
     else:
         return "Good Evening! BOSOM here to assist."
 
-def sendEmail(to, subject, content):
-    return "Email functionality needs secure configuration."
-
 def get_gemini_response(prompt):
-    api_key = "AIzaSyAMpRaL7cJv0BucHfT6fv52fGsjiI2deiI"
+    api_key = os.getenv('GEMINI_API_KEY', 'YOUR_GEMINI_API_KEY')  # Use env var for security
     if not api_key or api_key == "YOUR_GEMINI_API_KEY":
         socketio.emit('final_response', {'message': "BOSOM: Gemini API key not configured."})
         return
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         modified_prompt = f"{prompt} Please keep your answer under 50 words."
         response_stream = model.generate_content(modified_prompt, stream=True)
@@ -92,12 +89,12 @@ def process_query(query):
         return "BOSOM: Opening Google..."
         
     elif 'play music' in query_lower:
-        music_dir = 'C:\\Users\\YourUser\\Music'
+        music_dir = 'C:\\Users\\YourUser\\Music'  # Update to your local path; on cloud, this won't work
         if os.path.exists(music_dir):
             os.startfile(music_dir)
             return "BOSOM: Opening your music folder."
         else:
-            return f"BOSOM: Music directory not found at {music_dir}."
+            return "BOSOM: Music directory not found. Update the path in the code."
 
     elif 'the time' in query_lower:
         strTime = datetime.datetime.now().strftime("%I:%M %p")
@@ -133,7 +130,7 @@ def index():
     return render_template('index.html')
 
 listening_in_progress = False
-continuous_mode = True  # Always on by default
+continuous_mode = True
 
 @socketio.on('connect')
 def handle_connect():
@@ -141,7 +138,8 @@ def handle_connect():
     emit('final_response', {'message': greeting})
     if continuous_mode:
         socketio.emit('status_update', {'message': 'BOSOM: Continuous mode active. Listening...'})
-        handle_listen_command({})  # Auto-start listening
+        time.sleep(1)
+        handle_listen_command({})
 
 @socketio.on('listen_command')
 def handle_listen_command(json):
@@ -167,9 +165,13 @@ def handle_listen_command(json):
             if response is not None:
                 socketio.emit('final_response', {'message': response})
         except sr.WaitTimeoutError:
+            socketio.emit('status_update', {'message': 'BOSOM: No speech detected. Retrying...'})
+            time.sleep(1)
             if continuous_mode:
-                handle_listen_command({})  # Retry
+                handle_listen_command({})
         except sr.UnknownValueError:
+            socketio.emit('status_update', {'message': 'BOSOM: Didn't understand. Retrying...'})
+            time.sleep(1)
             if continuous_mode:
                 handle_listen_command({})
         except sr.RequestError as e:
@@ -182,5 +184,4 @@ def handle_listen_command(json):
 
 if __name__ == '__main__':
     print("Starting BOSOM AI server...")
-    print("Open http://127.0.0.1:5000")
-    socketio.run(app, debug=False)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
