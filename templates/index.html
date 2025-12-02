@@ -160,10 +160,10 @@
             console.log('Typing and speaking:', text);
             if ('speechSynthesis' in window && voicesLoaded) {
                 const voices = speechSynthesis.getVoices();
-                const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];  // Pick English voice
+                const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
                 if (!englishVoice) {
                     console.error('No English voice available');
-                    statusText.textContent = text;  // Fallback to text
+                    statusText.textContent = text;
                     return;
                 }
                 isAISpeaking = true;
@@ -198,7 +198,7 @@
                 speechSynthesis.speak(utterance);
             } else {
                 console.log('Speech synthesis not supported or voices not loaded.');
-                statusText.textContent = text;  // Fallback to text
+                statusText.textContent = text;
             }
         }
 
