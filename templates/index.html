@@ -42,11 +42,15 @@
                 </ul>
                 <p class="text-xs text-gray-500 mt-2">For other queries, BOSOM will use AI to respond.</p>
             </div>
-            <button id="start-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-full w-32 h-32 flex items-center justify-center transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-            </button>
+            <div class="mb-4">
+                <button id="start-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-full w-32 h-32 flex items-center justify-center transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                </button>
+            </div>
+            <!-- Debug Button -->
+            <button id="test-tts" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">Test TTS</button>
         </main>
         <footer class="mt-12">
             <p class="text-xs text-gray-500">Say "quit" to stop. Powered by BOSOM & Gemini.</p>
@@ -54,6 +58,7 @@
     </div>
     <script>
         const startButton = document.getElementById('start-button');
+        const testTTSButton = document.getElementById('test-tts');
         const statusText = document.getElementById('status-text');
         const userSpeechText = document.getElementById('user-speech-text');
         const socket = io.connect(window.location.origin);
@@ -67,32 +72,38 @@
 
         socket.on('status_update', (data) => {
             statusText.textContent = data.message;
+            console.log('Status update:', data.message);
         });
 
         socket.on('user_speech', (data) => {
             userSpeechText.textContent = data.message;
+            console.log('User speech:', data.message);
         });
 
         socket.on('final_response', (data) => {
             statusText.textContent = data.message;
             userSpeechText.textContent = '';
+            console.log('Final response:', data.message);
             speakInBrowser(data.message);
         });
 
         socket.on('stream_response_chunk', (data) => {
             streamedResponse += data.chunk;
             statusText.textContent = streamedResponse;
+            console.log('Stream chunk:', data.chunk);
         });
 
         socket.on('stream_end', (data) => {
             const fullMessage = data.full_message || streamedResponse;
             statusText.textContent = fullMessage;
             userSpeechText.textContent = '';
+            console.log('Stream end:', fullMessage);
             speakInBrowser(fullMessage);
             streamedResponse = "";
         });
 
         socket.on('start_listening', () => {
+            console.log('Starting listening...');
             startListening();
         });
 
@@ -114,6 +125,7 @@
 
             recognition.onresult = (event) => {
                 const query = event.results[0][0].transcript;
+                console.log('Recognized:', query);
                 socket.emit('speech_recognized', { query: query });
             };
 
@@ -132,26 +144,57 @@
         }
 
         function speakInBrowser(text) {
+            console.log('Attempting to speak:', text);
             if ('speechSynthesis' in window) {
-                isAISpeaking = true;
-                statusText.textContent = 'BOSOM is speaking...';
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'en-US';
-                utterance.onend = () => {
-                    isAISpeaking = false;
-                    statusText.textContent = 'BOSOM: Listening...';
-                };
-                window.speechSynthesis.speak(utterance);
+                const voices = speechSynthesis.getVoices();
+                console.log('Available voices:', voices.length);
+                if (voices.length === 0) {
+                    speechSynthesis.onvoiceschanged = () => {
+                        console.log('Voices loaded');
+                        speakText(text);
+                    };
+                } else {
+                    speakText(text);
+                }
             } else {
                 console.log('Speech synthesis not supported.');
-                isAISpeaking = false;
+                alert('TTS not supported in this browser.');
             }
+        }
+
+        function speakText(text) {
+            isAISpeaking = true;
+            statusText.textContent = 'BOSOM is speaking...';
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 1;  // Speed
+            utterance.pitch = 1;  // Pitch
+            utterance.volume = 1;  // Volume
+
+            utterance.onstart = () => console.log('TTS started');
+            utterance.onend = () => {
+                console.log('TTS ended');
+                isAISpeaking = false;
+                statusText.textContent = 'BOSOM: Listening...';
+            };
+            utterance.onerror = (e) => {
+                console.error('TTS error:', e);
+                isAISpeaking = false;
+                statusText.textContent = 'TTS error. Responses shown in text.';
+            };
+
+            speechSynthesis.speak(utterance);
         }
 
         startButton.addEventListener('click', () => {
             if (!isAISpeaking) {
                 socket.emit('start_listening');
             }
+        });
+
+        // Test TTS Button
+        testTTSButton.addEventListener('click', () => {
+            speakInBrowser('Hello, this is BOSOM testing TTS.');
         });
     </script>
 </body>
