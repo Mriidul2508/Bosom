@@ -66,6 +66,16 @@
         let recognition;
         let isAISpeaking = false;
         let streamedResponse = "";
+        let voicesLoaded = false;
+
+        // Load voices on page load
+        window.addEventListener('load', () => {
+            speechSynthesis.getVoices();  // Trigger loading
+            speechSynthesis.onvoiceschanged = () => {
+                voicesLoaded = true;
+                console.log('Voices loaded:', speechSynthesis.getVoices().length);
+            };
+        });
 
         socket.on('connect', () => {
             console.log('Connected to BOSOM!');
@@ -120,7 +130,7 @@
 
             recognition.onstart = () => {
                 statusText.textContent = 'BOSOM: Listening...';
-                startButton.disabled = false;  // Enable mic while listening
+                startButton.disabled = false;
                 startButton.classList.remove('bg-gray-500');
                 startButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
                 startButton.classList.add('pulse');
@@ -139,7 +149,7 @@
             };
 
             recognition.onend = () => {
-                startButton.disabled = false;  // Keep enabled after listening
+                startButton.disabled = false;
                 startButton.classList.remove('pulse');
             };
 
@@ -148,19 +158,22 @@
 
         function typeAndSpeak(text) {
             console.log('Typing and speaking:', text);
-            if ('speechSynthesis' in window) {
+            if ('speechSynthesis' in window && voicesLoaded) {
                 const voices = speechSynthesis.getVoices();
-                if (voices.length === 0) {
-                    speechSynthesis.onvoiceschanged = () => typeAndSpeak(text);
+                const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];  // Pick English voice
+                if (!englishVoice) {
+                    console.error('No English voice available');
+                    statusText.textContent = text;  // Fallback to text
                     return;
                 }
                 isAISpeaking = true;
-                startButton.disabled = true;  // Disable mic while speaking
+                startButton.disabled = true;
                 startButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
                 startButton.classList.add('bg-gray-500');
-                statusText.textContent = '';  // Clear for typing effect
+                statusText.textContent = '';
                 typeText(text, 0);
                 const utterance = new SpeechSynthesisUtterance(text);
+                utterance.voice = englishVoice;
                 utterance.lang = 'en-US';
                 utterance.rate = 1;
                 utterance.pitch = 1;
@@ -169,7 +182,7 @@
                 utterance.onend = () => {
                     console.log('TTS ended');
                     isAISpeaking = false;
-                    startButton.disabled = false;  // Re-enable mic after speaking
+                    startButton.disabled = false;
                     startButton.classList.remove('bg-gray-500');
                     startButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
                     statusText.textContent = 'BOSOM: Listening...';
@@ -184,16 +197,15 @@
                 };
                 speechSynthesis.speak(utterance);
             } else {
-                console.log('Speech synthesis not supported.');
-                alert('TTS not supported in this browser.');
-                statusText.textContent = text;  // Show text if no TTS
+                console.log('Speech synthesis not supported or voices not loaded.');
+                statusText.textContent = text;  // Fallback to text
             }
         }
 
         function typeText(text, index) {
             if (index < text.length) {
                 statusText.textContent += text.charAt(index);
-                setTimeout(() => typeText(text, index + 1), 50);  // Typing speed (50ms per char)
+                setTimeout(() => typeText(text, index + 1), 50);
             }
         }
 
