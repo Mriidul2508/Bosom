@@ -9,216 +9,206 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .pulse { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.7); animation: pulse-animation 2s infinite; }
-        @keyframes pulse-animation {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(96, 165, 250, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(96, 165, 250, 0); }
+        
+        /* Pulse animation for Listening State */
+        .pulse-red {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            animation: pulse-red-animation 1.5s infinite;
         }
+        @keyframes pulse-red-animation {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* Scrollbar for chat */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
-    <div class="w-full max-w-md mx-auto p-8 rounded-2xl shadow-2xl bg-gray-800 border border-gray-700 text-center">
-        <header class="mb-8">
-            <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
-            <p class="text-gray-400 mt-2">Your Personal AI Assistant</p>
+
+    <div class="w-full max-w-lg mx-auto p-6 rounded-2xl shadow-2xl bg-gray-800 border border-gray-700 text-center flex flex-col h-[90vh]">
+        
+        <header class="mb-4">
+            <h1 class="text-4xl font-bold text-blue-400 tracking-tight">BOSOM AI</h1>
+            <p class="text-gray-400 text-sm mt-1">Your Personal Voice Assistant</p>
         </header>
-        <main>
-            <div id="status-container" class="mb-6 p-4 bg-gray-700 rounded-lg min-h-[4rem] flex flex-col items-center justify-center">
-                <p id="status-text" class="text-lg text-gray-300">Ready to assist!</p>
-                <p id="user-speech-text" class="text-sm text-gray-400 mt-1"></p>
+
+        <main class="flex-1 flex flex-col justify-between overflow-hidden">
+            
+            <div id="chat-container" class="flex-1 overflow-y-auto mb-6 p-4 bg-gray-900 rounded-xl border border-gray-700 text-left space-y-4">
+                <div class="text-center text-gray-500 text-xs mt-10">
+                    tap the mic to start conversation
+                </div>
             </div>
-            <!-- Built-in Commands Section -->
-            <div class="mb-6 p-4 bg-gray-700 rounded-lg">
-                <h3 class="text-lg font-semibold text-blue-300 mb-2">Built-in Commands (Say them aloud):</h3>
-                <ul class="text-sm text-gray-300 space-y-1">
-                    <li>• "Search Wikipedia for [topic]"</li>
-                    <li>• "Open YouTube"</li>
-                    <li>• "Open Google"</li>
-                    <li>• "Play music"</li>
-                    <li>• "What is the time?"</li>
-                    <li>• "Open camera"</li>
-                    <li>• "Quit" or "Stop listening"</li>
-                </ul>
-                <p class="text-xs text-gray-500 mt-2">For other queries, BOSOM will use AI to respond.</p>
+
+            <div id="status-bar" class="mb-4 h-6 text-sm font-medium text-blue-300">
+                Ready
             </div>
-            <!-- Centered Mic Button -->
-            <div class="flex justify-center mb-4">
-                <button id="start-button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-full w-32 h-32 flex items-center justify-center transition-transform transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-500">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+            <div class="flex justify-center mb-6 relative">
+                <button id="mic-btn" onclick="toggleMic()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all transform shadow-lg focus:outline-none z-10">
+                    <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
                 </button>
             </div>
-            <!-- Debug Button -->
-            <button id="test-tts" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">Test TTS</button>
         </main>
-        <footer class="mt-12">
-            <p class="text-xs text-gray-500">Say "quit" to stop. Powered by BOSOM & Gemini.</p>
+
+        <footer class="mt-2">
+            <button onclick="testAudio()" class="text-xs text-gray-600 hover:text-gray-400 underline">
+                Test Audio Output
+            </button>
         </footer>
     </div>
+
     <script>
-        const startButton = document.getElementById('start-button');
-        const testTTSButton = document.getElementById('test-tts');
-        const statusText = document.getElementById('status-text');
-        const userSpeechText = document.getElementById('user-speech-text');
-        const socket = io.connect(window.location.origin);
+        const socket = io();
+        const micBtn = document.getElementById('mic-btn');
+        const statusBar = document.getElementById('status-bar');
+        const chatContainer = document.getElementById('chat-container');
+        const synth = window.speechSynthesis;
+
         let recognition;
-        let isAISpeaking = false;
-        let streamedResponse = "";
-        let voicesLoaded = false;
+        let isListening = false;
+        let isSpeaking = false;
 
-        // Load voices on page load
-        window.addEventListener('load', () => {
-            speechSynthesis.getVoices();
-            speechSynthesis.onvoiceschanged = () => {
-                voicesLoaded = true;
-                console.log('Voices loaded:', speechSynthesis.getVoices().length);
-            };
-        });
-
-        socket.on('connect', () => {
-            console.log('Connected to BOSOM!');
-        });
-
-        socket.on('status_update', (data) => {
-            statusText.textContent = data.message;
-            console.log('Status update:', data.message);
-        });
-
-        socket.on('user_speech', (data) => {
-            userSpeechText.textContent = data.message;
-            console.log('User speech:', data.message);
-        });
-
-        socket.on('final_response', (data) => {
-            statusText.textContent = data.message;
-            userSpeechText.textContent = '';
-            console.log('Final response:', data.message);
-            typeAndSpeak(data.message);
-        });
-
-        socket.on('stream_response_chunk', (data) => {
-            streamedResponse += data.chunk;
-            statusText.textContent = streamedResponse;
-            console.log('Stream chunk:', data.chunk);
-        });
-
-        socket.on('stream_end', (data) => {
-            const fullMessage = data.full_message || streamedResponse;
-            statusText.textContent = fullMessage;
-            userSpeechText.textContent = '';
-            console.log('Stream end:', fullMessage);
-            typeAndSpeak(fullMessage);
-            streamedResponse = "";
-        });
-
-        socket.on('start_listening', () => {
-            console.log('Starting listening...');
-            startListening();
-        });
-
-        function startListening() {
-            if (!('webkitSpeechRecognition' in window)) {
-                alert('Speech recognition not supported in this browser.');
-                return;
-            }
+        // --- 1. SETUP SPEECH RECOGNITION ---
+        if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
-            recognition.continuous = false;
+            recognition.continuous = false; // Important: Stop after one sentence
             recognition.interimResults = false;
             recognition.lang = 'en-US';
 
-            recognition.onstart = () => {
-                statusText.textContent = 'BOSOM: Listening...';
-                startButton.disabled = false;
-                startButton.classList.remove('bg-gray-500');
-                startButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                startButton.classList.add('pulse');
+            recognition.onstart = function() {
+                isListening = true;
+                statusBar.innerText = "Listening...";
+                // Visual update: Turn Red and Pulse
+                micBtn.classList.remove('bg-blue-600', 'hover:bg-blue-500');
+                micBtn.classList.add('bg-red-600', 'pulse-red');
             };
 
-            recognition.onresult = (event) => {
-                const query = event.results[0][0].transcript;
-                console.log('Recognized:', query);
-                socket.emit('speech_recognized', { query: query });
-            };
-
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                statusText.textContent = 'BOSOM: Speech recognition error. Retrying...';
-                setTimeout(() => socket.emit('start_listening'), 1000);
-            };
-
-            recognition.onend = () => {
-                startButton.disabled = false;
-                startButton.classList.remove('pulse');
-            };
-
-            recognition.start();
-        }
-
-        function typeAndSpeak(text) {
-            console.log('Typing and speaking:', text);
-            if ('speechSynthesis' in window && voicesLoaded) {
-                const voices = speechSynthesis.getVoices();
-                const englishVoice = voices.find(voice => voice.lang.startsWith('en')) || voices[0];
-                if (!englishVoice) {
-                    console.error('No English voice available');
-                    statusText.textContent = text;
-                    return;
+            recognition.onend = function() {
+                isListening = false;
+                // Visual update: Reset button
+                micBtn.classList.remove('bg-red-600', 'pulse-red');
+                micBtn.classList.add('bg-blue-600', 'hover:bg-blue-500');
+                
+                // If we didn't start speaking (processing), reset text
+                if (!isSpeaking && statusBar.innerText === "Listening...") {
+                    statusBar.innerText = "Tap to Speak";
                 }
-                isAISpeaking = true;
-                startButton.disabled = true;
-                startButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
-                startButton.classList.add('bg-gray-500');
-                statusText.textContent = '';
-                typeText(text, 0);
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.voice = englishVoice;
-                utterance.lang = 'en-US';
-                utterance.rate = 1;
-                utterance.pitch = 1;
-                utterance.volume = 1;
-                utterance.onstart = () => console.log('TTS started');
-                utterance.onend = () => {
-                    console.log('TTS ended');
-                    isAISpeaking = false;
-                    startButton.disabled = false;
-                    startButton.classList.remove('bg-gray-500');
-                    startButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                    statusText.textContent = 'BOSOM: Listening...';
-                };
-                utterance.onerror = (e) => {
-                    console.error('TTS error:', e);
-                    isAISpeaking = false;
-                    startButton.disabled = false;
-                    startButton.classList.remove('bg-gray-500');
-                    startButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
-                    statusText.textContent = 'TTS error. Responses shown in text.';
-                };
-                speechSynthesis.speak(utterance);
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                statusBar.innerText = "Processing...";
+                
+                // Display User Message
+                addMessage('You', transcript);
+                
+                // Send to Server
+                socket.emit('speech_recognized', { query: transcript });
+            };
+
+            recognition.onerror = function(event) {
+                console.error("Mic Error:", event.error);
+                statusBar.innerText = "Error: " + event.error;
+                isListening = false;
+                micBtn.classList.remove('bg-red-600', 'pulse-red');
+                micBtn.classList.add('bg-blue-600');
+            };
+        } else {
+            alert("Your browser does not support voice recognition. Please use Google Chrome.");
+            micBtn.disabled = true;
+        }
+
+        // --- 2. BUTTON HANDLER ---
+        function toggleMic() {
+            if (isSpeaking) {
+                // If AI is talking, stop it.
+                synth.cancel();
+                isSpeaking = false;
+                statusBar.innerText = "Stopped.";
+                micBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                return;
+            }
+
+            if (isListening) {
+                recognition.stop();
             } else {
-                console.log('Speech synthesis not supported or voices not loaded.');
-                statusText.textContent = text;
+                // Initial Interaction Trigger (for browser permissions)
+                socket.emit('start_interaction'); 
+                recognition.start();
             }
         }
 
-        function typeText(text, index) {
-            if (index < text.length) {
-                statusText.textContent += text.charAt(index);
-                setTimeout(() => typeText(text, index + 1), 50);
-            }
+        // --- 3. SOCKET EVENTS ---
+        socket.on('status_update', (data) => {
+            statusBar.innerText = data.message;
+        });
+
+        socket.on('final_response', (data) => {
+            addMessage('BOSOM', data.message);
+            speakText(data.message);
+        });
+
+        // --- 4. TTS HANDLER ---
+        function speakText(text) {
+            if (synth.speaking) synth.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Get Voices (Chrome loads them asynchronously)
+            let voices = synth.getVoices();
+            let preferredVoice = voices.find(v => v.lang.includes('en-US') && v.name.includes('Google')) || voices[0];
+            if (preferredVoice) utterance.voice = preferredVoice;
+
+            utterance.onstart = () => {
+                isSpeaking = true;
+                statusBar.innerText = "Speaking...";
+                // Disable Mic visually while speaking to prevent self-loop
+                micBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            };
+
+            utterance.onend = () => {
+                isSpeaking = false;
+                statusBar.innerText = "Tap to Reply";
+                micBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            };
+
+            synth.speak(utterance);
         }
 
-        startButton.addEventListener('click', () => {
-            if (!isAISpeaking) {
-                socket.emit('start_listening');
-            }
-        });
+        // Helper: Add Chat Bubbles
+        function addMessage(sender, text) {
+            const div = document.createElement('div');
+            const isUser = sender === 'You';
+            
+            div.className = `p-3 rounded-lg max-w-[85%] text-sm ${
+                isUser 
+                ? 'bg-blue-600 text-white ml-auto rounded-tr-none' 
+                : 'bg-gray-700 text-gray-200 mr-auto rounded-tl-none'
+            }`;
+            
+            div.innerHTML = `<strong>${sender}:</strong> ${text}`;
+            chatContainer.appendChild(div);
+            
+            // Auto scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
 
-        // Test TTS Button
-        testTTSButton.addEventListener('click', () => {
-            typeAndSpeak('Hello, this is BOSOM testing TTS and typing.');
-        });
+        // Helper: Test Audio
+        function testAudio() {
+            speakText("Audio system check. If you hear this, I am ready.");
+        }
+        
+        // Ensure voices are loaded (Chrome quirk)
+        window.speechSynthesis.onvoiceschanged = function() {
+            window.speechSynthesis.getVoices();
+        };
     </script>
 </body>
 </html>
