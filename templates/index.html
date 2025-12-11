@@ -20,7 +20,7 @@
     <div class="w-full max-w-lg mx-auto p-6 rounded-2xl bg-gray-800 text-center flex flex-col h-[90vh]">
         <header class="mb-4">
             <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
-            <p class="text-gray-400 text-sm">Continuous Conversation Mode</p>
+            <p class="text-gray-400 text-sm">Model: Gemini 2.5 Flash</p>
         </header>
 
         <main class="flex-1 flex flex-col justify-between overflow-hidden">
@@ -51,7 +51,7 @@
         // --- SPEECH RECOGNITION SETUP ---
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
-            recognition.continuous = false; // We restart it manually for better control
+            recognition.continuous = false; 
             recognition.lang = 'en-US';
 
             recognition.onstart = () => {
@@ -63,13 +63,15 @@
             recognition.onend = () => {
                 micBtn.classList.remove('bg-red-600', 'pulse-red');
                 micBtn.classList.add('bg-blue-600');
-                // Note: We do NOT restart here. We wait for Server Response -> TTS -> Restart
             };
 
             recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript;
-                statusBar.innerText = "Thinking...";
-                addMessage('You', transcript);
+                statusBar.innerText = "Sending...";
+                
+                // --- FIX: DO NOT ADD MESSAGE HERE. WAIT FOR SERVER. ---
+                // addMessage('You', transcript); <--- DELETED THIS LINE
+                
                 socket.emit('speech_recognized', { query: transcript });
             };
         }
@@ -77,14 +79,11 @@
         // --- CORE FUNCTIONS ---
 
         function startLoop() {
-            // This triggers the Initial Greeting from Server
             socket.emit('start_interaction');
         }
 
         socket.on('final_response', (data) => {
             addMessage('BOSOM', data.message);
-            
-            // Speak, and WHEN DONE, maybe listen again
             speakText(data.message, data.should_listen);
 
             if (data.redirect) {
@@ -97,11 +96,9 @@
             
             const utterance = new SpeechSynthesisUtterance(text);
             
-            // --- THE LOOP LOGIC ---
             utterance.onend = function() {
                 if (shouldListenNext) {
                     statusBar.innerText = "Auto-restarting Mic...";
-                    // Small delay ensures the mic doesn't pick up the AI's last word echo
                     setTimeout(() => {
                         recognition.start();
                     }, 500); 
@@ -114,7 +111,11 @@
         }
 
         // --- UI HELPERS ---
-        socket.on('user_speech', (data) => addMessage('You', data.message.replace('You: ', '')));
+        socket.on('user_speech', (data) => {
+            // Only add message when server confirms it
+            addMessage('You', data.message.replace('You: ', ''));
+        });
+        
         socket.on('status_update', (data) => statusBar.innerText = data.message);
 
         function addMessage(sender, text) {
