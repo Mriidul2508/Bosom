@@ -7,127 +7,77 @@ import cv2
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import logging
-import time
 
 # Suppress logs
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
 os.environ['GRPC_LOG_SEVERITY_LEVEL'] = 'ERROR'
-
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
-
-# --- REVISION 2: Use 'threading' async_mode for compatibility ---
+# Use threading for stability on Render
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# --- CONFIGURATION ---
+# Set this to False to fix the "Listening loop" and browser blocking issues
+continuous_mode = False 
 
 def wishMe():
     hour = int(datetime.datetime.now().hour)
     if 0 <= hour < 12:
-        return "Good Morning! I'm BOSOM, your AI assistant."
+        return "Good Morning! I'm BOSOM."
     elif 12 <= hour < 18:
-        return "Good Afternoon! I'm BOSOM, ready to help."
+        return "Good Afternoon! I'm BOSOM."
     else:
-        return "Good Evening! BOSOM here to assist."
+        return "Good Evening! I'm BOSOM."
 
 def get_gemini_response(prompt):
     api_key = os.getenv('GEMINI_API_KEY')
-    
-    if not api_key or api_key == "YOUR_GEMINI_API_KEY":
-        socketio.emit('final_response', {'message': "BOSOM: Gemini API key not configured."})
-        print("Error: GEMINI_API_KEY is missing in Environment Variables.")
+    if not api_key:
+        socketio.emit('final_response', {'message': "BOSOM: API key missing."})
         return
 
     try:
         genai.configure(api_key=api_key)
-        
-        # --- REVISION 3: Updated to valid model name (1.5-flash) ---
         model = genai.GenerativeModel('gemini-1.5-flash')
+        modified_prompt = f"{prompt} Keep answer under 50 words."
         
-        modified_prompt = f"{prompt} Please keep your answer under 50 words."
-        response_stream = model.generate_content(modified_prompt, stream=True)
-        
-        full_response = ""
-        for chunk in response_stream:
-            if chunk.text:
-                full_response += chunk.text
-                socketio.emit('stream_response_chunk', {'chunk': chunk.text})
-        
-        socketio.emit('stream_end', {'full_message': full_response})
+        # Using non-streaming for stability with SocketIO threading
+        response = model.generate_content(modified_prompt)
+        if response.text:
+            socketio.emit('final_response', {'message': response.text})
+            
     except Exception as e:
-        # Print actual error to Render logs for debugging
         print(f"Gemini Error: {e}")
-        socketio.emit('final_response', {'message': "BOSOM: Sorry, trouble connecting to my brain."})
+        socketio.emit('final_response', {'message': "BOSOM: Brain connection error."})
 
 def process_query(query):
     query_lower = query.lower()
 
     if 'wikipedia' in query_lower:
-        socketio.emit('status_update', {'message': 'BOSOM is searching Wikipedia...'})
         try:
             query_lower = query_lower.replace("wikipedia", "").strip()
             results = wikipedia.summary(query_lower, sentences=2)
-            return f"BOSOM: According to Wikipedia, {results}"
-        except wikipedia.exceptions.PageError:
-            return f"BOSOM: Sorry, no Wikipedia page for {query_lower}."
-        except wikipedia.exceptions.DisambiguationError:
-            return "BOSOM: Multiple results. Be more specific."
-        except Exception as e:
-            print(f"Wikipedia Error: {e}")
-            return "BOSOM: Couldn't fetch from Wikipedia."
+            return f"According to Wikipedia, {results}"
+        except:
+            return "Could not search Wikipedia."
 
     elif 'open youtube' in query_lower:
-        # Note: This opens on the SERVER, not the user's browser, when deployed.
-        # To fix this, you'd handle it in Javascript on the frontend.
-        webbrowser.open("https://youtube.com")
-        return "BOSOM: Requesting to open YouTube..."
+        # Note: This opens on SERVER side if deployed. 
+        # Ideally handle in frontend JS.
+        webbrowser.open("https://youtube.com") 
+        return "Opening YouTube."
 
     elif 'open google' in query_lower:
         webbrowser.open("https://google.com")
-        return "BOSOM: Requesting to open Google..."
+        return "Opening Google."
         
-    elif 'play music' in query_lower:
-        # --- REVISION 4: Prevent crash on Linux/Render ---
-        if os.name == 'nt': # Checks if running on Windows
-            music_dir = 'C:\\Users\\YourUser\\Music'
-            if os.path.exists(music_dir):
-                os.startfile(music_dir)
-                return "BOSOM: Opening your music folder."
-            else:
-                return "BOSOM: Music directory not found."
-        else:
-            return "BOSOM: I cannot open local folders on a cloud server."
-
-    elif 'the time' in query_lower:
+    elif 'time' in query_lower:
         strTime = datetime.datetime.now().strftime("%I:%M %p")
-        return f"BOSOM: The time is {strTime}"
-
-    elif 'open camera' in query_lower:
-        # --- REVISION 5: Prevent crash on Headless Server ---
-        # cv2.imshow requires a screen. Render is a headless server.
-        # We catch this to prevent the app from restarting/crashing.
-        try:
-            cap = cv2.VideoCapture(0)
-            if not cap.isOpened():
-                return "BOSOM: No camera found on server."
-            
-            # Read one frame to check connection, but DON'T show window
-            ret, frame = cap.read()
-            cap.release()
-            
-            if ret:
-                return "BOSOM: Camera connected (Server-side), but I cannot display it here."
-            else:
-                return "BOSOM: Could not access the camera."
-        except Exception as e:
-            print(f"Camera Error: {e}")
-            return "BOSOM: Camera features are disabled on the cloud."
-
-    elif 'quit' in query_lower or 'exit' in query_lower or 'stop listening' in query_lower:
-        global continuous_mode
-        continuous_mode = False
-        return "BOSOM: Goodbye! Listening stopped."
-
+        return f"The time is {strTime}"
+        
+    # --- FIX: Removed Camera/Music to prevent server crashes ---
+    
     else:
         get_gemini_response(query)
         return None
@@ -136,15 +86,20 @@ def process_query(query):
 def index():
     return render_template('index.html')
 
-continuous_mode = True
-
 @socketio.on('connect')
 def handle_connect():
+    # We do NOT trigger audio/listening here anymore.
+    # Just send a text status update.
+    print("Client connected")
+    emit('status_update', {'message': 'BOSOM is online. Click Mic to speak.'})
+
+@socketio.on('start_interaction')
+def handle_interaction():
+    # Triggered only when user clicks the button
     greeting = wishMe()
     emit('final_response', {'message': greeting})
-    if continuous_mode:
-        socketio.emit('status_update', {'message': 'BOSOM: Continuous mode active. Listening...'})
-        socketio.emit('start_listening')
+    # We tell frontend to listen AFTER the greeting
+    emit('start_listening_command')
 
 @socketio.on('speech_recognized')
 def handle_speech_recognized(data):
@@ -152,17 +107,13 @@ def handle_speech_recognized(data):
     if not query:
         return
     
-    socketio.emit('user_speech', {'message': f'You said: "{query}"'})
-    socketio.emit('status_update', {'message': 'BOSOM: Thinking...'})
+    socketio.emit('user_speech', {'message': f'You: {query}'})
+    socketio.emit('status_update', {'message': 'Thinking...'})
     
     response = process_query(query)
-    if response is not None:
+    
+    if response:
         socketio.emit('final_response', {'message': response})
-        if continuous_mode:
-            socketio.emit('start_listening')
-    else:
-        pass
 
 if __name__ == '__main__':
-    # allow_unsafe_werkzeug is okay for dev/demos
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), allow_unsafe_werkzeug=True)
