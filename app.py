@@ -39,7 +39,7 @@ def get_gemini_response(prompt):
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         modified_prompt = f"{prompt} Please keep your answer under 50 words."
         response_stream = model.generate_content(modified_prompt, stream=True)
         
