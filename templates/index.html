@@ -70,7 +70,7 @@
 
         // Load voices on page load
         window.addEventListener('load', () => {
-            speechSynthesis.getVoices();  // Trigger loading
+            speechSynthesis.getVoices();
             speechSynthesis.onvoiceschanged = () => {
                 voicesLoaded = true;
                 console.log('Voices loaded:', speechSynthesis.getVoices().length);
