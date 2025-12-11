@@ -27,9 +27,9 @@ def get_ai_response(text):
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
-        # Fallback to 1.5-flash if 2.5 is busy
+        # Upgrade to 2.5-pro if 2.5-flash is busy
         try:
-            fallback = genai.GenerativeModel('gemini-1.5-flash')
+            fallback = genai.GenerativeModel('gemini-2.5-pro')
             response = fallback.generate_content(f"Answer in 1 sentence: {text}")
             return response.text
         except Exception as e2:
