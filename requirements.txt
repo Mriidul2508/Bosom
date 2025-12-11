@@ -1,5 +1,4 @@
 flask
 flask-socketio
 google-generativeai
-wikipedia
 gunicorn
