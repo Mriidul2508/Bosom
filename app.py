@@ -39,7 +39,7 @@ def get_gemini_response(prompt):
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')  # Optimized for speed/cost
+        model = genai.GenerativeModel('gemini-1.5-flash')
         modified_prompt = f"{prompt} Please keep your answer under 50 words."
         response_stream = model.generate_content(modified_prompt, stream=True)
         
@@ -148,5 +148,4 @@ def handle_speech_recognized(data):
         pass
 
 if __name__ == '__main__':
-    # For local testing
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
