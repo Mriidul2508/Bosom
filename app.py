@@ -1,7 +1,6 @@
 import os
 import datetime
 import logging
-import time
 import google.generativeai as genai
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
@@ -22,15 +21,23 @@ def get_ai_response(text):
     if not api_key: return "Error: API Key missing."
     
     genai.configure(api_key=api_key)
-    # Using the standard free model
-    model = genai.GenerativeModel('gemini-2.5-flash')
-
+    
+    # REQUESTED MODEL: gemini-2.5-flash
+    model_name = 'gemini-2.5-flash'
+    
     try:
+        model = genai.GenerativeModel(model_name)
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
-        if "429" in str(e): return "I need a moment to cool down."
-        return f"Error: {str(e)}"
+        # Fallback if 2.5 is not available yet
+        logger.warning(f"Gemini 2.5 Error: {e}. Falling back to 1.5-flash.")
+        try:
+            fallback_model = genai.GenerativeModel('gemini-1.5-flash')
+            response = fallback_model.generate_content(f"Answer in 1 sentence: {text}")
+            return response.text
+        except Exception as e2:
+            return f"Error: {str(e2)}"
 
 # --- ROUTES ---
 @app.route('/')
@@ -43,7 +50,7 @@ def handle_connect():
 
 @socketio.on('start_interaction')
 def handle_interaction():
-    # 1. GENERATE GREETING BASED ON TIME
+    # 1. GREETING
     hour = datetime.datetime.now().hour
     if 0 <= hour < 12: greeting = "Good Morning!"
     elif 12 <= hour < 18: greeting = "Good Afternoon!"
@@ -51,7 +58,7 @@ def handle_interaction():
     
     greeting += " I am listening."
 
-    # 2. SEND GREETING + INSTRUCTION TO LISTEN AFTERWARDS
+    # 2. SEND GREETING + START LISTENING LOOP
     emit('final_response', {
         'message': greeting,
         'should_listen': True 
@@ -63,23 +70,23 @@ def handle_speech(data):
         query = data.get('query', '').lower()
         if not query: return
 
+        # SEND CONFIRMATION (The only one that will show in chat)
         emit('user_speech', {'message': f"You: {query}"})
         emit('status_update', {'message': 'Thinking...'})
         
         response_text = ""
         redirect_url = None
-        should_listen = True # Default: Continue loop
+        should_listen = True 
 
-        # --- CHECK FOR QUIT COMMANDS ---
+        # --- LOGIC ---
         if 'quit' in query or 'exit' in query or 'stop' in query:
             response_text = "Goodbye! Have a great day."
-            should_listen = False # Stop loop
+            should_listen = False
         
-        # --- COMMANDS ---
         elif 'open youtube' in query:
             response_text = "Opening YouTube."
             redirect_url = "https://youtube.com"
-            should_listen = False # Usually stop listening after opening a tab
+            should_listen = False 
         
         elif 'open google' in query:
             response_text = "Opening Google."
