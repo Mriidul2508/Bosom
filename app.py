@@ -1,6 +1,7 @@
 import os
 import datetime
 import logging
+import time
 import google.generativeai as genai
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 
-# Threading mode for Render stability
+# Threading mode for Render
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=90)
 
 # --- AI ENGINE ---
@@ -21,15 +22,30 @@ def get_ai_response(text):
     if not api_key: return "Error: API Key missing."
     
     genai.configure(api_key=api_key)
-    # Using the standard free model
-    model = genai.GenerativeModel('gemini-2.5-flash')
-
+    
+    # User Requested: gemini-2.5-flash
+    # (Note: If 2.5 doesn't exist yet, this triggers the fallback to 1.5)
     try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
-        if "429" in str(e): return "I need a moment to cool down."
-        return f"Error: {str(e)}"
+        error_msg = str(e)
+        
+        # 1. HANDLE RATE LIMIT (429)
+        if "429" in error_msg:
+            return "I am receiving too many requests. Please wait 10 seconds."
+
+        # 2. FALLBACK TO STANDARD MODEL (1.5-flash)
+        logger.warning(f"Gemini 2.5 failed ({e}). Switching to 1.5-flash.")
+        try:
+            fallback = genai.GenerativeModel('gemini-1.5-flash')
+            response = fallback.generate_content(f"Answer in 1 sentence: {text}")
+            return response.text
+        except Exception as e2:
+            if "429" in str(e2):
+                return "System cooling down. Please wait a moment."
+            return f"Error: {str(e2)}"
 
 # --- ROUTES ---
 @app.route('/')
@@ -38,19 +54,18 @@ def index():
 
 @socketio.on('connect')
 def handle_connect():
-    emit('status_update', {'message': 'System Online. Tap mic to start.'})
+    emit('status_update', {'message': 'System Online. Tap mic.'})
 
 @socketio.on('start_interaction')
 def handle_interaction():
-    # 1. GREETING
+    # Greeting Logic
     hour = datetime.datetime.now().hour
     if 0 <= hour < 12: greeting = "Good Morning!"
     elif 12 <= hour < 18: greeting = "Good Afternoon!"
     else: greeting = "Good Evening!"
     
-    greeting += " I am listening."
-
-    # 2. SEND GREETING + START LISTENING LOOP
+    greeting += " I am ready."
+    
     emit('final_response', {
         'message': greeting,
         'should_listen': True 
@@ -62,7 +77,7 @@ def handle_speech(data):
         query = data.get('query', '').lower()
         if not query: return
 
-        # SEND CONFIRMATION (The only one that will show in chat)
+        # Confirm User Speech
         emit('user_speech', {'message': f"You: {query}"})
         emit('status_update', {'message': 'Thinking...'})
         
@@ -70,9 +85,9 @@ def handle_speech(data):
         redirect_url = None
         should_listen = True 
 
-        # --- LOGIC ---
+        # --- COMMANDS ---
         if 'quit' in query or 'exit' in query or 'stop' in query:
-            response_text = "Goodbye! Have a great day."
+            response_text = "Goodbye!"
             should_listen = False
         
         elif 'open youtube' in query:
@@ -101,7 +116,7 @@ def handle_speech(data):
         
     except Exception as e:
         logger.error(f"CRASH: {e}")
-        emit('final_response', {'message': f"Error: {str(e)}", 'should_listen': False})
+        emit('final_response', {'message': f"System Error: {str(e)}", 'should_listen': False})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
