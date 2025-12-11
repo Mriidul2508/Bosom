@@ -20,7 +20,7 @@
     <div class="w-full max-w-lg mx-auto p-6 rounded-2xl bg-gray-800 text-center flex flex-col h-[90vh]">
         <header class="mb-4">
             <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
-            <p class="text-gray-400 text-sm">Model: Gemini 2.5 Flash</p>
+            <p class="text-gray-400 text-sm">Model: Gemini 2.5 / 1.5 Flash</p>
         </header>
 
         <main class="flex-1 flex flex-col justify-between overflow-hidden">
@@ -48,7 +48,6 @@
         const synth = window.speechSynthesis;
         let recognition;
         
-        // --- SPEECH RECOGNITION SETUP ---
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false; 
@@ -68,15 +67,10 @@
             recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript;
                 statusBar.innerText = "Sending...";
-                
-                // --- FIX: DO NOT ADD MESSAGE HERE. WAIT FOR SERVER. ---
-                // addMessage('You', transcript); <--- DELETED THIS LINE
-                
+                // We do NOT addMessage here. We wait for server confirmation.
                 socket.emit('speech_recognized', { query: transcript });
             };
         }
-
-        // --- CORE FUNCTIONS ---
 
         function startLoop() {
             socket.emit('start_interaction');
@@ -98,10 +92,13 @@
             
             utterance.onend = function() {
                 if (shouldListenNext) {
-                    statusBar.innerText = "Auto-restarting Mic...";
+                    statusBar.innerText = "Restarting Mic in 1.5s...";
+                    
+                    // --- RATE LIMIT FIX: Increased Delay to 1500ms ---
                     setTimeout(() => {
                         recognition.start();
-                    }, 500); 
+                    }, 1500); 
+                    
                 } else {
                     statusBar.innerText = "Conversation Ended.";
                 }
@@ -110,9 +107,7 @@
             synth.speak(utterance);
         }
 
-        // --- UI HELPERS ---
         socket.on('user_speech', (data) => {
-            // Only add message when server confirms it
             addMessage('You', data.message.replace('You: ', ''));
         });
         
