@@ -1,11 +1,7 @@
-google-generativeai
 flask
 flask-socketio
+eventlet
+gunicorn
+google-generativeai
 wikipedia
 opencv-python-headless
-python-engineio
-python-socketio
-gevent-websocket
-gunicorn
-eventlet
-
