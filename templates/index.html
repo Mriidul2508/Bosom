@@ -9,59 +9,37 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
-        
-        /* Pulse animation for Listening State */
-        .pulse-red {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-            animation: pulse-red-animation 1.5s infinite;
+        .pulse-red { animation: pulse-red 1.5s infinite; }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
-        @keyframes pulse-red-animation {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
-
-        /* Scrollbar for chat */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1f2937; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
     </style>
 </head>
 <body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
 
     <div class="w-full max-w-lg mx-auto p-6 rounded-2xl shadow-2xl bg-gray-800 border border-gray-700 text-center flex flex-col h-[90vh]">
-        
         <header class="mb-4">
-            <h1 class="text-4xl font-bold text-blue-400 tracking-tight">BOSOM AI</h1>
-            <p class="text-gray-400 text-sm mt-1">Your Personal Voice Assistant</p>
+            <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
+            <p class="text-gray-400 text-sm">Your Personal Voice Assistant</p>
         </header>
 
         <main class="flex-1 flex flex-col justify-between overflow-hidden">
-            
             <div id="chat-container" class="flex-1 overflow-y-auto mb-6 p-4 bg-gray-900 rounded-xl border border-gray-700 text-left space-y-4">
-                <div class="text-center text-gray-500 text-xs mt-10">
-                    tap the mic to start conversation
-                </div>
+                <div class="text-center text-gray-500 text-xs mt-10">tap mic to start</div>
             </div>
 
-            <div id="status-bar" class="mb-4 h-6 text-sm font-medium text-blue-300">
-                Ready
-            </div>
+            <div id="status-bar" class="mb-4 h-6 text-sm font-medium text-blue-300">Ready</div>
 
             <div class="flex justify-center mb-6 relative">
-                <button id="mic-btn" onclick="toggleMic()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all transform shadow-lg focus:outline-none z-10">
-                    <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <button id="mic-btn" onclick="toggleMic()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all shadow-lg z-10">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
                 </button>
             </div>
         </main>
-
-        <footer class="mt-2">
-            <button onclick="testAudio()" class="text-xs text-gray-600 hover:text-gray-400 underline">
-                Test Audio Output
-            </button>
-        </footer>
     </div>
 
     <script>
@@ -70,145 +48,79 @@
         const statusBar = document.getElementById('status-bar');
         const chatContainer = document.getElementById('chat-container');
         const synth = window.speechSynthesis;
-
         let recognition;
         let isListening = false;
-        let isSpeaking = false;
+        let watchdogTimer;
 
-        // --- 1. SETUP SPEECH RECOGNITION ---
+        // Setup Speech Recognition
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
-            recognition.continuous = false; // Important: Stop after one sentence
-            recognition.interimResults = false;
+            recognition.continuous = false;
             recognition.lang = 'en-US';
 
-            recognition.onstart = function() {
+            recognition.onstart = () => {
                 isListening = true;
                 statusBar.innerText = "Listening...";
-                // Visual update: Turn Red and Pulse
-                micBtn.classList.remove('bg-blue-600', 'hover:bg-blue-500');
+                micBtn.classList.remove('bg-blue-600');
                 micBtn.classList.add('bg-red-600', 'pulse-red');
             };
 
-            recognition.onend = function() {
-                isListening = false;
-                // Visual update: Reset button
-                micBtn.classList.remove('bg-red-600', 'pulse-red');
-                micBtn.classList.add('bg-blue-600', 'hover:bg-blue-500');
-                
-                // If we didn't start speaking (processing), reset text
-                if (!isSpeaking && statusBar.innerText === "Listening...") {
-                    statusBar.innerText = "Tap to Speak";
-                }
-            };
-
-            recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                statusBar.innerText = "Processing...";
-                
-                // Display User Message
-                addMessage('You', transcript);
-                
-                // Send to Server
-                socket.emit('speech_recognized', { query: transcript });
-            };
-
-            recognition.onerror = function(event) {
-                console.error("Mic Error:", event.error);
-                statusBar.innerText = "Error: " + event.error;
+            recognition.onend = () => {
                 isListening = false;
                 micBtn.classList.remove('bg-red-600', 'pulse-red');
                 micBtn.classList.add('bg-blue-600');
+                // Watchdog: If server doesn't reply in 10s, reset status
+                watchdogTimer = setTimeout(() => {
+                    if (statusBar.innerText === "Thinking...") {
+                        statusBar.innerText = "Server timed out. Try again.";
+                    }
+                }, 10000);
             };
-        } else {
-            alert("Your browser does not support voice recognition. Please use Google Chrome.");
-            micBtn.disabled = true;
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                statusBar.innerText = "Thinking...";
+                addMessage('You', transcript);
+                socket.emit('speech_recognized', { query: transcript });
+            };
         }
 
-        // --- 2. BUTTON HANDLER ---
         function toggleMic() {
-            if (isSpeaking) {
-                // If AI is talking, stop it.
-                synth.cancel();
-                isSpeaking = false;
-                statusBar.innerText = "Stopped.";
-                micBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                return;
-            }
-
-            if (isListening) {
-                recognition.stop();
-            } else {
-                // Initial Interaction Trigger (for browser permissions)
-                socket.emit('start_interaction'); 
+            if (isListening) recognition.stop();
+            else {
+                socket.emit('start_interaction');
                 recognition.start();
             }
         }
 
-        // --- 3. SOCKET EVENTS ---
-        socket.on('status_update', (data) => {
-            statusBar.innerText = data.message;
-        });
+        socket.on('status_update', (data) => statusBar.innerText = data.message);
 
         socket.on('final_response', (data) => {
+            clearTimeout(watchdogTimer); // Clear timeout since we got a reply
             addMessage('BOSOM', data.message);
             speakText(data.message);
+            
+            // --- FIX: Handle URL opening here ---
+            if (data.redirect) {
+                setTimeout(() => {
+                    window.open(data.redirect, '_blank');
+                }, 1000); // Small delay so TTS can start
+            }
         });
 
-        // --- 4. TTS HANDLER ---
         function speakText(text) {
             if (synth.speaking) synth.cancel();
-
             const utterance = new SpeechSynthesisUtterance(text);
-            
-            // Get Voices (Chrome loads them asynchronously)
-            let voices = synth.getVoices();
-            let preferredVoice = voices.find(v => v.lang.includes('en-US') && v.name.includes('Google')) || voices[0];
-            if (preferredVoice) utterance.voice = preferredVoice;
-
-            utterance.onstart = () => {
-                isSpeaking = true;
-                statusBar.innerText = "Speaking...";
-                // Disable Mic visually while speaking to prevent self-loop
-                micBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            };
-
-            utterance.onend = () => {
-                isSpeaking = false;
-                statusBar.innerText = "Tap to Reply";
-                micBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            };
-
             synth.speak(utterance);
         }
 
-        // Helper: Add Chat Bubbles
         function addMessage(sender, text) {
             const div = document.createElement('div');
-            const isUser = sender === 'You';
-            
-            div.className = `p-3 rounded-lg max-w-[85%] text-sm ${
-                isUser 
-                ? 'bg-blue-600 text-white ml-auto rounded-tr-none' 
-                : 'bg-gray-700 text-gray-200 mr-auto rounded-tl-none'
-            }`;
-            
+            div.className = `p-3 rounded-lg max-w-[85%] text-sm ${sender === 'You' ? 'bg-blue-600 text-white ml-auto' : 'bg-gray-700 text-gray-200 mr-auto'}`;
             div.innerHTML = `<strong>${sender}:</strong> ${text}`;
             chatContainer.appendChild(div);
-            
-            // Auto scroll to bottom
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
-
-        // Helper: Test Audio
-        function testAudio() {
-            speakText("Audio system check. If you hear this, I am ready.");
-        }
-        
-        // Ensure voices are loaded (Chrome quirk)
-        window.speechSynthesis.onvoiceschanged = function() {
-            window.speechSynthesis.getVoices();
-        };
     </script>
 </body>
 </html>
