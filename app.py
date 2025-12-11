@@ -1,89 +1,93 @@
 import google.generativeai as genai
 import datetime
-import webbrowser
 import os
 import wikipedia
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
 import logging
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
 
-# Setup simpler logging
+# Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 
-# async_mode='threading' is most stable for this setup
+# Threading mode is best for Render
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60)
 
-def get_ai_reply(prompt, sid):
-    """Runs in background to prevent blocking the server"""
+# --- GEMINI SETUP ---
+def get_ai_reply(prompt):
     api_key = os.getenv('GEMINI_API_KEY')
-    
     if not api_key:
-        socketio.emit('final_response', {'message': "Error: API Key missing."}, room=sid)
-        return
-
+        return "Error: API Key is missing on the server."
+    
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Simple, direct prompt
-        response = model.generate_content(f"You are a helpful assistant. Reply in 2 sentences: {prompt}")
-        
-        if response.text:
-            socketio.emit('final_response', {'message': response.text}, room=sid)
-        else:
-            socketio.emit('final_response', {'message': "I am not sure what to say."}, room=sid)
-            
+        response = model.generate_content(f"Reply in 1 sentence: {prompt}")
+        return response.text if response.text else "I'm not sure."
     except Exception as e:
-        logger.error(f"AI Error: {e}")
-        socketio.emit('final_response', {'message': "Sorry, my brain is offline right now."}, room=sid)
+        logger.error(f"Gemini Error: {e}")
+        return "I'm having trouble connecting to my brain."
 
+# --- MAIN LOGIC ---
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @socketio.on('connect')
 def handle_connect():
-    emit('status_update', {'message': 'BOSOM Connected. Tap Mic.'})
+    emit('status_update', {'message': 'Online and Ready.'})
 
 @socketio.on('start_interaction')
 def handle_interaction():
-    # Simple greeting to confirm audio works
-    hour = datetime.datetime.now().hour
-    greeting = "Good Morning" if hour < 12 else "Good Afternoon" if hour < 18 else "Good Evening"
-    emit('final_response', {'message': f"{greeting}, I am listening."})
+    # Just a sound check, don't trigger AI yet
+    emit('status_update', {'message': 'Listening...'})
 
 @socketio.on('speech_recognized')
 def handle_speech(data):
-    query = data.get('query', '')
-    if not query: 
-        return
+    query = data.get('query', '').lower()
+    if not query: return
 
-    # 1. Acknowledge immediately
+    logger.info(f"User said: {query}")
+    
+    # 1. Update Chat UI immediately
     emit('user_speech', {'message': f"You: {query}"})
     emit('status_update', {'message': 'Thinking...'})
 
-    # 2. Check simple commands first (Fast)
-    if 'time' in query.lower():
-        t = datetime.datetime.now().strftime("%I:%M %p")
-        emit('final_response', {'message': f"It is {t}"})
-        return
-        
-    elif 'wikipedia' in query.lower():
-        try:
-            q = query.lower().replace('wikipedia', '').strip()
-            res = wikipedia.summary(q, sentences=1)
-            emit('final_response', {'message': f"Wikipedia says: {res}"})
-        except:
-            emit('final_response', {'message': "I couldn't find that."})
-        return
+    response_text = ""
+    redirect_url = None
 
-    # 3. If complex, run AI in BACKGROUND so connection doesn't drop
-    from flask import request
-    socketio.start_background_task(get_ai_reply, query, request.sid)
+    # 2. COMMANDS
+    if 'open youtube' in query:
+        response_text = "Opening YouTube for you."
+        redirect_url = "https://youtube.com"
+        
+    elif 'open google' in query:
+        response_text = "Opening Google."
+        redirect_url = "https://google.com"
+
+    elif 'time' in query:
+        t = datetime.datetime.now().strftime("%I:%M %p")
+        response_text = f"It is {t}"
+
+    elif 'wikipedia' in query:
+        try:
+            q = query.replace('wikipedia', '').strip()
+            response_text = wikipedia.summary(q, sentences=1)
+        except:
+            response_text = "I couldn't find that on Wikipedia."
+            
+    else:
+        # 3. AI FALLBACK
+        response_text = get_ai_reply(query)
+
+    # 4. SEND RESPONSE TO FRONTEND
+    emit('final_response', {
+        'message': response_text,
+        'redirect': redirect_url 
+    })
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
