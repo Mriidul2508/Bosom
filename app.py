@@ -1,21 +1,18 @@
 import os
 import datetime
 import logging
-# import webbrowser  <-- DELETED: This was killing your server
 import google.generativeai as genai
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 
-# 1. Setup Logging so you can see errors in Render Dashboard
+# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 
-# 2. CONFIGURATION FOR STABILITY
-# async_mode='threading' prevents the "Invalid Session" error on Render
-# ping_timeout=90 gives the connection more time before failing
+# Threading mode prevents "Invalid Session" errors
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=90)
 
 # --- AI ENGINE ---
@@ -25,13 +22,19 @@ def get_ai_response(text):
         return "Error: Gemini API Key is missing."
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        # Keep it short to prevent timeouts
+        
+        # Switched to 'gemini-1.5-flash-latest' for better compatibility
+        # If this fails, the code catches it below.
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
         logger.error(f"Gemini Error: {e}")
-        return f"I'm having trouble thinking: {str(e)}"
+        # Detailed error for debugging
+        if "404" in str(e):
+            return "Error: Server library is old. Please update requirements.txt to 'google-generativeai>=0.7.2'"
+        return f"My brain had a glitch: {str(e)}"
 
 # --- ROUTES ---
 @app.route('/')
@@ -59,7 +62,7 @@ def handle_speech(data):
         response_text = ""
         redirect_url = None
 
-        # 2. SAFE COMMAND LOGIC (No crashes)
+        # 2. COMMAND LOGIC
         if 'open youtube' in query:
             response_text = "Opening YouTube..."
             redirect_url = "https://youtube.com"
