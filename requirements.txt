@@ -2,5 +2,4 @@ flask
 flask-socketio
 google-generativeai
 wikipedia
-opencv-python-headless
 gunicorn
