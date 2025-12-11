@@ -5,15 +5,34 @@ import google.generativeai as genai
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 
-# Logging
+# 1. Logging Setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 
-# Threading mode prevents "Invalid Session" errors
+# 2. Threading for Render Stability
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=90)
+
+# --- DIAGNOSTIC: PRINT AVAILABLE MODELS ON STARTUP ---
+def print_available_models():
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        logger.error("STARTUP ERROR: API Key is missing.")
+        return
+    try:
+        genai.configure(api_key=api_key)
+        logger.info("--- CHECKING AVAILABLE MODELS ---")
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                logger.info(f"Found Model: {m.name}")
+        logger.info("--- END MODEL CHECK ---")
+    except Exception as e:
+        logger.error(f"STARTUP ERROR: Could not list models. {e}")
+
+# Run the check immediately
+print_available_models()
 
 # --- AI ENGINE ---
 def get_ai_response(text):
@@ -23,18 +42,14 @@ def get_ai_response(text):
     try:
         genai.configure(api_key=api_key)
         
-        # Switched to 'gemini-1.5-flash-latest' for better compatibility
-        # If this fails, the code catches it below.
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        # FIXED: Reverted to the standard, stable ID
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
         logger.error(f"Gemini Error: {e}")
-        # Detailed error for debugging
-        if "404" in str(e):
-            return "Error: Server library is old. Please update requirements.txt to 'google-generativeai>=0.7.2'"
-        return f"My brain had a glitch: {str(e)}"
+        return f"Error: {str(e)}"
 
 # --- ROUTES ---
 @app.route('/')
