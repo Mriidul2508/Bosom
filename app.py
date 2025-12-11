@@ -21,23 +21,15 @@ def get_ai_response(text):
     if not api_key: return "Error: API Key missing."
     
     genai.configure(api_key=api_key)
-    
-    # REQUESTED MODEL: gemini-2.5-flash
-    model_name = 'gemini-2.5-flash'
-    
+    # Using the standard free model
+    model = genai.GenerativeModel('gemini-2.5-flash')
+
     try:
-        model = genai.GenerativeModel(model_name)
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
-        # Fallback if 2.5 is not available yet
-        logger.warning(f"Gemini 2.5 Error: {e}. Falling back to 1.5-flash.")
-        try:
-            fallback_model = genai.GenerativeModel('gemini-1.5-flash')
-            response = fallback_model.generate_content(f"Answer in 1 sentence: {text}")
-            return response.text
-        except Exception as e2:
-            return f"Error: {str(e2)}"
+        if "429" in str(e): return "I need a moment to cool down."
+        return f"Error: {str(e)}"
 
 # --- ROUTES ---
 @app.route('/')
