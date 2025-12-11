@@ -1,6 +1,3 @@
-import eventlet
-eventlet.monkey_patch()
-
 import google.generativeai as genai
 import datetime
 import webbrowser
@@ -20,7 +17,9 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# --- REVISION 2: Use 'threading' async_mode for compatibility ---
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 def wishMe():
     hour = int(datetime.datetime.now().hour)
@@ -32,14 +31,19 @@ def wishMe():
         return "Good Evening! BOSOM here to assist."
 
 def get_gemini_response(prompt):
-    api_key = os.getenv('GEMINI_API_KEY', 'YOUR_GEMINI_API_KEY')
+    api_key = os.getenv('GEMINI_API_KEY')
+    
     if not api_key or api_key == "YOUR_GEMINI_API_KEY":
         socketio.emit('final_response', {'message': "BOSOM: Gemini API key not configured."})
+        print("Error: GEMINI_API_KEY is missing in Environment Variables.")
         return
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        # --- REVISION 3: Updated to valid model name (1.5-flash) ---
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
         modified_prompt = f"{prompt} Please keep your answer under 50 words."
         response_stream = model.generate_content(modified_prompt, stream=True)
         
@@ -51,6 +55,7 @@ def get_gemini_response(prompt):
         
         socketio.emit('stream_end', {'full_message': full_response})
     except Exception as e:
+        # Print actual error to Render logs for debugging
         print(f"Gemini Error: {e}")
         socketio.emit('final_response', {'message': "BOSOM: Sorry, trouble connecting to my brain."})
 
@@ -72,41 +77,52 @@ def process_query(query):
             return "BOSOM: Couldn't fetch from Wikipedia."
 
     elif 'open youtube' in query_lower:
+        # Note: This opens on the SERVER, not the user's browser, when deployed.
+        # To fix this, you'd handle it in Javascript on the frontend.
         webbrowser.open("https://youtube.com")
-        return "BOSOM: Opening YouTube..."
+        return "BOSOM: Requesting to open YouTube..."
 
     elif 'open google' in query_lower:
         webbrowser.open("https://google.com")
-        return "BOSOM: Opening Google..."
+        return "BOSOM: Requesting to open Google..."
         
     elif 'play music' in query_lower:
-        music_dir = 'C:\\Users\\YourUser\\Music'
-        if os.path.exists(music_dir):
-            os.startfile(music_dir)
-            return "BOSOM: Opening your music folder."
+        # --- REVISION 4: Prevent crash on Linux/Render ---
+        if os.name == 'nt': # Checks if running on Windows
+            music_dir = 'C:\\Users\\YourUser\\Music'
+            if os.path.exists(music_dir):
+                os.startfile(music_dir)
+                return "BOSOM: Opening your music folder."
+            else:
+                return "BOSOM: Music directory not found."
         else:
-            return "BOSOM: Music directory not found. Update the path in the code."
+            return "BOSOM: I cannot open local folders on a cloud server."
 
     elif 'the time' in query_lower:
         strTime = datetime.datetime.now().strftime("%I:%M %p")
         return f"BOSOM: The time is {strTime}"
 
     elif 'open camera' in query_lower:
+        # --- REVISION 5: Prevent crash on Headless Server ---
+        # cv2.imshow requires a screen. Render is a headless server.
+        # We catch this to prevent the app from restarting/crashing.
         try:
             cap = cv2.VideoCapture(0)
             if not cap.isOpened():
-                return "BOSOM: Could not open camera."
+                return "BOSOM: No camera found on server."
+            
+            # Read one frame to check connection, but DON'T show window
             ret, frame = cap.read()
-            if ret:
-                cv2.imshow('Camera', frame)
-                cv2.waitKey(2000)
             cap.release()
-            cv2.destroyAllWindows()
-            return "BOSOM: Opening camera for a moment."
+            
+            if ret:
+                return "BOSOM: Camera connected (Server-side), but I cannot display it here."
+            else:
+                return "BOSOM: Could not access the camera."
         except Exception as e:
             print(f"Camera Error: {e}")
-            return "BOSOM: Could not access the camera."
-            
+            return "BOSOM: Camera features are disabled on the cloud."
+
     elif 'quit' in query_lower or 'exit' in query_lower or 'stop listening' in query_lower:
         global continuous_mode
         continuous_mode = False
@@ -148,4 +164,5 @@ def handle_speech_recognized(data):
         pass
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    # allow_unsafe_werkzeug is okay for dev/demos
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), allow_unsafe_werkzeug=True)
