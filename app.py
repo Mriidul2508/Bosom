@@ -1,46 +1,38 @@
 import os
 import datetime
 import logging
-import time
 import google.generativeai as genai
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 
-# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 
-# Threading mode for Render
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=90)
 
-# --- AI ENGINE (HYBRID PRO/FLASH) ---
+# --- AI ENGINE ---
 def get_ai_response(text):
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key: return "Error: API Key missing."
     
     genai.configure(api_key=api_key)
     
-    # 1. TRY THE SMART MODEL (2.5 PRO)
+    # FIX: Use FLASH model to prevent "My brain is tired" errors
+    # Pro models (2 RPM) represent the 'Tired' errors. Flash models (15 RPM) are stable.
     try:
-        model = genai.GenerativeModel('gemini-2.5-pro')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
     except Exception as e:
-        error_msg = str(e)
-        
-        # 2. IF PRO FAILS (Rate Limit or Timeout), SWITCH TO FLASH
-        logger.warning(f"Pro Model Failed ({error_msg}). Switching to Flash.")
-        
+        # Fallback to 1.5-flash if 2.5 is busy
         try:
-            # Fallback to the faster, high-quota model
-            fallback = genai.GenerativeModel('gemini-2.5-flash')
+            fallback = genai.GenerativeModel('gemini-1.5-flash')
             response = fallback.generate_content(f"Answer in 1 sentence: {text}")
             return response.text
         except Exception as e2:
-            if "429" in str(e2): return "RATE_LIMIT_HIT"
             return f"Error: {str(e2)}"
 
 # --- ROUTES ---
@@ -69,21 +61,21 @@ def handle_speech(data):
     try:
         query = data.get('query', '').strip()
         
-        # Noise Filter
+        # Noise filter (< 4 chars)
         if not query or len(query) < 4:
-            emit('status_update', {'message': 'Ignoring short noise...'})
             return 
 
         emit('user_speech', {'message': f"You: {query}"})
-        emit('status_update', {'message': 'Thinking (Pro)...'})
+        emit('status_update', {'message': 'Thinking...'})
         
         response_text = ""
         redirect_url = None
         should_listen = True 
         is_rate_limit = False
 
-        if 'quit' in query.lower() or 'stop' in query.lower():
-            response_text = "Goodbye!"
+        # --- COMMANDS ---
+        if 'quit' in query.lower() or 'stop' in query.lower() or 'shut up' in query.lower():
+            response_text = "Goodbye! I'm going offline."
             should_listen = False
         
         elif 'open youtube' in query.lower():
@@ -97,8 +89,9 @@ def handle_speech(data):
         
         else:
             response_text = get_ai_response(query)
-            if response_text == "RATE_LIMIT_HIT":
-                response_text = "My brain is tired. Give me 10 seconds."
+            # If we still hit a limit, we handle it gently
+            if "429" in response_text or "quota" in response_text.lower():
+                response_text = "I'm receiving too many messages. One moment."
                 is_rate_limit = True
 
         emit('final_response', {
