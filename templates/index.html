@@ -5,35 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BOSOM AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .pulse-red { animation: pulse-red 1.5s infinite; }
-        @keyframes pulse-red {
+        .pulse-red { animation: pulse 1.5s infinite; }
+        @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
             70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen font-sans">
 
-    <div class="w-full max-w-lg mx-auto p-6 rounded-2xl shadow-2xl bg-gray-800 border border-gray-700 text-center flex flex-col h-[90vh]">
+    <div class="w-full max-w-lg mx-auto p-6 rounded-2xl bg-gray-800 text-center flex flex-col h-[90vh]">
         <header class="mb-4">
             <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
-            <p class="text-gray-400 text-sm">Your Personal Voice Assistant</p>
+            <p class="text-gray-400 text-sm">Continuous Conversation Mode</p>
         </header>
 
         <main class="flex-1 flex flex-col justify-between overflow-hidden">
-            <div id="chat-container" class="flex-1 overflow-y-auto mb-6 p-4 bg-gray-900 rounded-xl border border-gray-700 text-left space-y-4">
-                <div class="text-center text-gray-500 text-xs mt-10">tap mic to start</div>
+            <div id="chat-container" class="flex-1 overflow-y-auto mb-6 p-4 bg-gray-900 rounded-xl text-left space-y-4">
+                <div class="text-center text-gray-500 text-xs mt-10">Tap mic to start loop</div>
             </div>
 
             <div id="status-bar" class="mb-4 h-6 text-sm font-medium text-blue-300">Ready</div>
 
             <div class="flex justify-center mb-6 relative">
-                <button id="mic-btn" onclick="toggleMic()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all shadow-lg z-10">
+                <button id="mic-btn" onclick="startLoop()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all shadow-lg z-10">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
@@ -49,32 +47,23 @@
         const chatContainer = document.getElementById('chat-container');
         const synth = window.speechSynthesis;
         let recognition;
-        let isListening = false;
-        let watchdogTimer;
-
-        // Setup Speech Recognition
+        
+        // --- SPEECH RECOGNITION SETUP ---
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
-            recognition.continuous = false;
+            recognition.continuous = false; // We restart it manually for better control
             recognition.lang = 'en-US';
 
             recognition.onstart = () => {
-                isListening = true;
                 statusBar.innerText = "Listening...";
-                micBtn.classList.remove('bg-blue-600');
                 micBtn.classList.add('bg-red-600', 'pulse-red');
+                micBtn.classList.remove('bg-blue-600');
             };
 
             recognition.onend = () => {
-                isListening = false;
                 micBtn.classList.remove('bg-red-600', 'pulse-red');
                 micBtn.classList.add('bg-blue-600');
-                // Watchdog: If server doesn't reply in 10s, reset status
-                watchdogTimer = setTimeout(() => {
-                    if (statusBar.innerText === "Thinking...") {
-                        statusBar.innerText = "Server timed out. Try again.";
-                    }
-                }, 10000);
+                // Note: We do NOT restart here. We wait for Server Response -> TTS -> Restart
             };
 
             recognition.onresult = (event) => {
@@ -85,34 +74,48 @@
             };
         }
 
-        function toggleMic() {
-            if (isListening) recognition.stop();
-            else {
-                socket.emit('start_interaction');
-                recognition.start();
-            }
+        // --- CORE FUNCTIONS ---
+
+        function startLoop() {
+            // This triggers the Initial Greeting from Server
+            socket.emit('start_interaction');
         }
 
-        socket.on('status_update', (data) => statusBar.innerText = data.message);
-
         socket.on('final_response', (data) => {
-            clearTimeout(watchdogTimer); // Clear timeout since we got a reply
             addMessage('BOSOM', data.message);
-            speakText(data.message);
             
-            // --- FIX: Handle URL opening here ---
+            // Speak, and WHEN DONE, maybe listen again
+            speakText(data.message, data.should_listen);
+
             if (data.redirect) {
-                setTimeout(() => {
-                    window.open(data.redirect, '_blank');
-                }, 1000); // Small delay so TTS can start
+                setTimeout(() => window.open(data.redirect, '_blank'), 1000);
             }
         });
 
-        function speakText(text) {
+        function speakText(text, shouldListenNext) {
             if (synth.speaking) synth.cancel();
+            
             const utterance = new SpeechSynthesisUtterance(text);
+            
+            // --- THE LOOP LOGIC ---
+            utterance.onend = function() {
+                if (shouldListenNext) {
+                    statusBar.innerText = "Auto-restarting Mic...";
+                    // Small delay ensures the mic doesn't pick up the AI's last word echo
+                    setTimeout(() => {
+                        recognition.start();
+                    }, 500); 
+                } else {
+                    statusBar.innerText = "Conversation Ended.";
+                }
+            };
+
             synth.speak(utterance);
         }
+
+        // --- UI HELPERS ---
+        socket.on('user_speech', (data) => addMessage('You', data.message.replace('You: ', '')));
+        socket.on('status_update', (data) => statusBar.innerText = data.message);
 
         function addMessage(sender, text) {
             const div = document.createElement('div');
