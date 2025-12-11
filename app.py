@@ -43,7 +43,7 @@ def get_ai_response(text):
         genai.configure(api_key=api_key)
         
         # FIXED: Reverted to the standard, stable ID
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-3-pro-preview')
         
         response = model.generate_content(f"Answer in 1 sentence: {text}")
         return response.text
