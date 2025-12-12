@@ -20,18 +20,18 @@
     <div class="w-full max-w-lg mx-auto p-6 rounded-2xl bg-gray-800 text-center flex flex-col h-[90vh]">
         <header class="mb-4">
             <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
-            <p class="text-gray-400 text-sm">Model: Gemini 2.5 / 1.5 Flash</p>
+            <p id="mode-text" class="text-gray-400 text-sm">Detecting Device...</p>
         </header>
 
         <main class="flex-1 flex flex-col justify-between overflow-hidden">
             <div id="chat-container" class="flex-1 overflow-y-auto mb-6 p-4 bg-gray-900 rounded-xl text-left space-y-4">
-                <div class="text-center text-gray-500 text-xs mt-10">Tap mic to start loop</div>
+                <div class="text-center text-gray-500 text-xs mt-10">Tap mic to start</div>
             </div>
 
             <div id="status-bar" class="mb-4 h-6 text-sm font-medium text-blue-300">Ready</div>
 
             <div class="flex justify-center mb-6 relative">
-                <button id="mic-btn" onclick="startLoop()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all shadow-lg z-10">
+                <button id="mic-btn" onclick="handleMicClick()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all shadow-lg z-10">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
@@ -45,72 +45,102 @@
         const micBtn = document.getElementById('mic-btn');
         const statusBar = document.getElementById('status-bar');
         const chatContainer = document.getElementById('chat-container');
+        const modeText = document.getElementById('mode-text');
         const synth = window.speechSynthesis;
-        let recognition;
         
+        // --- DETECTION LOGIC ---
+        let isIOS = false;
+        let recognition = null;       // For Android/PC
+        let mediaRecorder = null;     // For iOS
+        let audioChunks = [];         // For iOS
+
+        // Check for Standard Speech API
         if ('webkitSpeechRecognition' in window) {
+            modeText.innerText = "Mode: Fast Streaming (Android/PC)";
             recognition = new webkitSpeechRecognition();
-            recognition.continuous = false; 
+            recognition.continuous = false;
             recognition.lang = 'en-US';
 
-            recognition.onstart = () => {
-                statusBar.innerText = "Listening...";
-                micBtn.classList.add('bg-red-600', 'pulse-red');
-                micBtn.classList.remove('bg-blue-600');
-            };
-
-            recognition.onend = () => {
-                micBtn.classList.remove('bg-red-600', 'pulse-red');
-                micBtn.classList.add('bg-blue-600');
-            };
-
-            recognition.onresult = (event) => {
-                const transcript = event.results[0][0].transcript;
+            recognition.onstart = () => updateMicUI(true);
+            recognition.onend = () => updateMicUI(false);
+            recognition.onresult = (e) => {
+                const transcript = e.results[0][0].transcript;
                 statusBar.innerText = "Sending...";
-                // We do NOT addMessage here. We wait for server confirmation.
                 socket.emit('speech_recognized', { query: transcript });
             };
+        } else {
+            // FALLBACK FOR iOS
+            isIOS = true;
+            modeText.innerText = "Mode: Audio Recorder (iOS)";
         }
 
-        function startLoop() {
-            socket.emit('start_interaction');
+        // --- MIC HANDLER ---
+        let isRecordingIOS = false;
+
+        async function handleMicClick() {
+            if (!isIOS) {
+                // ANDROID/PC Logic
+                try { recognition.start(); } catch(e) {}
+            } else {
+                // iOS Logic
+                if (!isRecordingIOS) {
+                    startIOSRecording();
+                } else {
+                    stopIOSRecording();
+                }
+            }
         }
 
+        async function startIOSRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Use supported mime type for iOS
+                const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
+                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    statusBar.innerText = "Sending Audio...";
+                    socket.emit('process_audio', { audio: audioBlob, mime: mimeType });
+                };
+
+                mediaRecorder.start();
+                isRecordingIOS = true;
+                updateMicUI(true);
+                statusBar.innerText = "Recording... Tap to Stop";
+            } catch (err) {
+                alert("Microphone access denied. Please enable it in Settings.");
+            }
+        }
+
+        function stopIOSRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+                isRecordingIOS = false;
+                updateMicUI(false);
+            }
+        }
+
+        function updateMicUI(isActive) {
+            if (isActive) {
+                micBtn.classList.remove('bg-blue-600');
+                micBtn.classList.add('bg-red-600', 'pulse-red');
+            } else {
+                micBtn.classList.remove('bg-red-600', 'pulse-red');
+                micBtn.classList.add('bg-blue-600');
+            }
+        }
+
+        // --- SOCKET HANDLERS ---
         socket.on('final_response', (data) => {
             addMessage('BOSOM', data.message);
             speakText(data.message, data.should_listen);
-
-            if (data.redirect) {
-                setTimeout(() => window.open(data.redirect, '_blank'), 1000);
-            }
+            if (data.redirect) setTimeout(() => window.open(data.redirect, '_blank'), 1000);
         });
 
-        function speakText(text, shouldListenNext) {
-            if (synth.speaking) synth.cancel();
-            
-            const utterance = new SpeechSynthesisUtterance(text);
-            
-            utterance.onend = function() {
-                if (shouldListenNext) {
-                    statusBar.innerText = "Restarting Mic in 1.5s...";
-                    
-                    // --- RATE LIMIT FIX: Increased Delay to 1500ms ---
-                    setTimeout(() => {
-                        recognition.start();
-                    }, 1500); 
-                    
-                } else {
-                    statusBar.innerText = "Conversation Ended.";
-                }
-            };
-
-            synth.speak(utterance);
-        }
-
-        socket.on('user_speech', (data) => {
-            addMessage('You', data.message.replace('You: ', ''));
-        });
-        
+        socket.on('user_speech', (data) => addMessage('You', data.message.replace('You: ', '')));
         socket.on('status_update', (data) => statusBar.innerText = data.message);
 
         function addMessage(sender, text) {
@@ -120,6 +150,26 @@
             chatContainer.appendChild(div);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
+
+        function speakText(text, shouldListenNext) {
+            if (synth.speaking) synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            utterance.onend = function() {
+                if (shouldListenNext) {
+                    statusBar.innerText = "Resume in 1.5s...";
+                    setTimeout(() => {
+                        handleMicClick(); // Triggers correct logic for both OS
+                    }, 1500);
+                } else {
+                    statusBar.innerText = "Ended.";
+                }
+            };
+            synth.speak(utterance);
+        }
+        
+        // Initial Start
+        socket.on('connect', () => socket.emit('start_interaction'));
     </script>
 </body>
 </html>
