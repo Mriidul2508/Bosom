@@ -29,7 +29,7 @@ def get_text_response(text):
     except:
         # Fallback
         try:
-            model = genai.GenerativeModel('gemini-2.5-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(f"Answer in 1 sentence: {text}")
             return response.text
         except Exception as e:
