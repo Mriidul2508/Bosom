@@ -29,7 +29,7 @@ def get_text_response(text):
     except:
         # Fallback
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-2.5-pro')
             response = model.generate_content(f"Answer in 1 sentence: {text}")
             return response.text
         except Exception as e:
@@ -42,7 +42,7 @@ def get_audio_response(audio_bytes, mime_type):
     genai.configure(api_key=api_key)
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash') # 1.5 handles audio reliably
+        model = genai.GenerativeModel('gemini-2.5-flash') # 2.5 handles audio reliably
         
         # Send raw audio directly to Gemini
         response = model.generate_content([
