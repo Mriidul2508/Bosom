@@ -114,7 +114,7 @@ def get_ai_response(text):
     genai.configure(api_key=api_key)
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         # We give the AI a "System Prompt" to act as an orchestrator
         prompt = f"""
         You are a smart assistant named BOSOM.
