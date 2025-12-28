@@ -22,14 +22,12 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['UPLOAD_FOLDER'] = '.' 
 
-# Threading mode for Render stability
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=90)
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
 # --- GMAIL AUTH FLOW ---
 def get_gmail_service():
-    """Returns Gmail Service or None if not authenticated"""
     creds = None
     if os.path.exists('token.json'):
         try:
@@ -126,23 +124,28 @@ def send_email(to_address, subject, body):
     except Exception as e:
         return f"Failed to send email: {e}"
 
-# --- AI ENGINE ---
+# --- AI ENGINE (UPDATED ROUTING) ---
 def get_ai_response(text):
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key: return "Error: API Key missing."
     genai.configure(api_key=api_key)
     
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # Using 1.5-flash for speed and reliability
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # --- MODIFIED PROMPT: Only use Wikipedia if EXPLICITLY asked ---
         prompt = f"""
         You are BOSOM, an advanced AI assistant.
-        User: "{text}"
+        User Input: "{text}"
         
-        If user wants to check email -> Reply: "ACTION: CHECK_EMAILS"
-        If user wants to send email -> Reply: "ACTION: SEND_EMAIL | to@email.com | Subject | Body"
-        If user asks for facts/definitions -> Reply: "ACTION: WIKIPEDIA | Search Term"
-        Otherwise -> Reply naturally in 1 sentence.
+        INSTRUCTIONS:
+        1. If user asks to check/read emails -> Reply: "ACTION: CHECK_EMAILS"
+        2. If user asks to send email -> Reply: "ACTION: SEND_EMAIL | to@email.com | Subject | Body"
+        3. If user EXPLICITLY says "search wikipedia" or "check wikipedia" -> Reply: "ACTION: WIKIPEDIA | Search Term"
+        4. For ALL other questions (definitions, facts, chat) -> Answer directly using your own knowledge in 1 sentence.
         """
+        
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -161,7 +164,6 @@ def handle_connect():
 
 @socketio.on('start_interaction')
 def handle_interaction():
-    # Loop Greeting
     hour = datetime.datetime.now().hour
     if 0 <= hour < 12: greeting = "Good Morning!"
     elif 12 <= hour < 18: greeting = "Good Afternoon!"
@@ -181,9 +183,8 @@ def handle_speech(data):
     emit('status_update', {'message': 'Processing...'})
 
     response_text = ""
-    should_listen = True # DEFAULT: LOOP IS ON
+    should_listen = True 
 
-    # CHECK QUIT COMMAND
     if 'quit' in query.lower() or 'stop' in query.lower() or 'shut up' in query.lower():
         should_listen = False
         response_text = "Goodbye! Going offline."
@@ -192,7 +193,7 @@ def handle_speech(data):
         # 1. AI Decision
         ai_decision = get_ai_response(query)
 
-        # 2. Execution
+        # 2. Router
         if "ACTION: CHECK_EMAILS" in ai_decision:
             emit('status_update', {'message': 'Scanning Inbox...'})
             response_text = check_unread_emails()
@@ -215,6 +216,7 @@ def handle_speech(data):
                 response_text = "I couldn't find that on Wikipedia."
 
         else:
+            # Standard Gemini Reply
             response_text = ai_decision
 
     emit('final_response', {
