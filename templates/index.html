@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BOSOM AI</title>
+    <title>BOSOM AI - Integrated</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
@@ -17,22 +17,56 @@
 </head>
 <body class="bg-gray-900 text-white flex items-center justify-center min-h-screen font-sans">
 
-    <div class="w-full max-w-lg mx-auto p-6 rounded-2xl bg-gray-800 text-center flex flex-col h-[90vh]">
-        <header class="mb-4">
-            <h1 class="text-4xl font-bold text-blue-400">BOSOM AI</h1>
-            <p id="mode-text" class="text-gray-400 text-sm">Detecting Device...</p>
+    <div class="w-full max-w-xl mx-auto p-6 rounded-2xl bg-gray-800 flex flex-col h-[95vh] border border-gray-700 shadow-2xl">
+        
+        <header class="mb-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-blue-400">BOSOM AI</h1>
+                <p class="text-gray-400 text-xs">Gmail • Wikipedia • Gemini</p>
+            </div>
+            <div id="gmail-badge" class="px-3 py-1 rounded-full text-xs bg-gray-700 text-gray-400">
+                Gmail: Disconnected
+            </div>
         </header>
 
-        <main class="flex-1 flex flex-col justify-between overflow-hidden">
-            <div id="chat-container" class="flex-1 overflow-y-auto mb-6 p-4 bg-gray-900 rounded-xl text-left space-y-4">
-                <div class="text-center text-gray-500 text-xs mt-10">Tap mic to start</div>
+        <div id="setup-panel" class="hidden mb-4 p-4 bg-gray-700 rounded-lg border border-gray-600">
+            <h3 class="font-bold text-blue-300 mb-2">Connect Gmail</h3>
+            <p class="text-xs text-gray-300 mb-3">Upload 'credentials.json' from Google Cloud.</p>
+            
+            <input type="file" id="cred-file" class="text-xs mb-2 text-gray-300 w-full">
+            <button onclick="uploadCredentials()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs w-full mb-3">
+                1. Upload Credentials
+            </button>
+
+            <div id="auth-step-2" class="hidden">
+                <p class="text-xs text-yellow-300 mb-1">Action Required:</p>
+                <a id="auth-link" href="#" target="_blank" class="text-blue-300 underline text-xs block mb-2 break-all">Click here to authorize Google Access</a>
+                <input type="text" id="auth-code" placeholder="Paste the code here..." class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white mb-2">
+                <button onclick="submitAuthCode()" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs w-full">
+                    2. Verify Code
+                </button>
+            </div>
+            
+            <button onclick="toggleSetup()" class="text-gray-400 text-xs underline mt-2 w-full text-center">Close Setup</button>
+        </div>
+
+        <main class="flex-1 flex flex-col justify-between overflow-hidden relative">
+            
+            <button onclick="toggleSetup()" class="absolute top-0 right-0 text-xs text-gray-500 hover:text-blue-400">
+                ⚙️ Setup
+            </button>
+
+            <div id="chat-container" class="flex-1 overflow-y-auto mb-4 mt-6 p-4 bg-gray-900 rounded-xl space-y-3 border border-gray-700">
+                <div class="text-center text-gray-600 text-xs mt-10">
+                    Try: "Do I have any emails?" or "Search Wikipedia for NASA"
+                </div>
             </div>
 
-            <div id="status-bar" class="mb-4 h-6 text-sm font-medium text-blue-300">Ready</div>
+            <div id="status-bar" class="mb-4 h-5 text-xs font-mono text-blue-300 text-center">System Ready</div>
 
-            <div class="flex justify-center mb-6 relative">
-                <button id="mic-btn" onclick="handleMicClick()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-24 h-24 flex items-center justify-center transition-all shadow-lg z-10">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div class="flex justify-center mb-2">
+                <button id="mic-btn" onclick="startLoop()" class="bg-blue-600 hover:bg-blue-500 text-white rounded-full w-20 h-20 flex items-center justify-center transition-all shadow-lg hover:shadow-blue-500/50">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
                 </button>
@@ -42,134 +76,104 @@
 
     <script>
         const socket = io();
-        const micBtn = document.getElementById('mic-btn');
-        const statusBar = document.getElementById('status-bar');
-        const chatContainer = document.getElementById('chat-container');
-        const modeText = document.getElementById('mode-text');
         const synth = window.speechSynthesis;
+        let recognition;
         
-        // --- DETECTION LOGIC ---
-        let isIOS = false;
-        let recognition = null;       // For Android/PC
-        let mediaRecorder = null;     // For iOS
-        let audioChunks = [];         // For iOS
+        // --- GMAIL SETUP LOGIC ---
+        function toggleSetup() {
+            document.getElementById('setup-panel').classList.toggle('hidden');
+        }
 
-        // Check for Standard Speech API
+        async function uploadCredentials() {
+            const fileInput = document.getElementById('cred-file');
+            if(fileInput.files.length === 0) return alert("Please select a file first");
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            const status = document.getElementById('status-bar');
+            status.innerText = "Uploading...";
+
+            try {
+                const response = await fetch('/upload_credentials', { method: 'POST', body: formData });
+                const result = await response.json();
+                
+                if(result.success) {
+                    // Show Step 2
+                    document.getElementById('auth-step-2').classList.remove('hidden');
+                    document.getElementById('auth-link').href = result.auth_url;
+                    status.innerText = "Please authorize via the link above.";
+                } else {
+                    alert("Error: " + result.error);
+                }
+            } catch(e) {
+                alert("Upload failed.");
+            }
+        }
+
+        function submitAuthCode() {
+            const code = document.getElementById('auth-code').value;
+            if(!code) return alert("Please paste the code");
+            socket.emit('submit_auth_code', { code: code });
+            document.getElementById('setup-panel').classList.add('hidden');
+        }
+
+        socket.on('gmail_status', (data) => {
+            const badge = document.getElementById('gmail-badge');
+            if(data.connected) {
+                badge.innerText = "Gmail: Connected";
+                badge.classList.replace('bg-gray-700', 'bg-green-900');
+                badge.classList.replace('text-gray-400', 'text-green-300');
+            }
+        });
+
+        // --- SPEECH LOGIC (Standard) ---
         if ('webkitSpeechRecognition' in window) {
-            modeText.innerText = "Mode: Fast Streaming (Android/PC)";
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
             recognition.lang = 'en-US';
 
-            recognition.onstart = () => updateMicUI(true);
-            recognition.onend = () => updateMicUI(false);
+            recognition.onstart = () => {
+                document.getElementById('status-bar').innerText = "Listening...";
+                document.getElementById('mic-btn').classList.add('bg-red-600', 'pulse-red');
+                document.getElementById('mic-btn').classList.remove('bg-blue-600');
+            };
+
+            recognition.onend = () => {
+                document.getElementById('mic-btn').classList.remove('bg-red-600', 'pulse-red');
+                document.getElementById('mic-btn').classList.add('bg-blue-600');
+            };
+
             recognition.onresult = (e) => {
                 const transcript = e.results[0][0].transcript;
-                statusBar.innerText = "Sending...";
                 socket.emit('speech_recognized', { query: transcript });
             };
-        } else {
-            // FALLBACK FOR iOS
-            isIOS = true;
-            modeText.innerText = "Mode: Audio Recorder (iOS)";
         }
 
-        // --- MIC HANDLER ---
-        let isRecordingIOS = false;
+        function startLoop() { recognition.start(); }
 
-        async function handleMicClick() {
-            if (!isIOS) {
-                // ANDROID/PC Logic
-                try { recognition.start(); } catch(e) {}
-            } else {
-                // iOS Logic
-                if (!isRecordingIOS) {
-                    startIOSRecording();
-                } else {
-                    stopIOSRecording();
-                }
-            }
-        }
-
-        async function startIOSRecording() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                // Use supported mime type for iOS
-                const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
-                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
-                audioChunks = [];
-
-                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: mimeType });
-                    statusBar.innerText = "Sending Audio...";
-                    socket.emit('process_audio', { audio: audioBlob, mime: mimeType });
-                };
-
-                mediaRecorder.start();
-                isRecordingIOS = true;
-                updateMicUI(true);
-                statusBar.innerText = "Recording... Tap to Stop";
-            } catch (err) {
-                alert("Microphone access denied. Please enable it in Settings.");
-            }
-        }
-
-        function stopIOSRecording() {
-            if (mediaRecorder) {
-                mediaRecorder.stop();
-                isRecordingIOS = false;
-                updateMicUI(false);
-            }
-        }
-
-        function updateMicUI(isActive) {
-            if (isActive) {
-                micBtn.classList.remove('bg-blue-600');
-                micBtn.classList.add('bg-red-600', 'pulse-red');
-            } else {
-                micBtn.classList.remove('bg-red-600', 'pulse-red');
-                micBtn.classList.add('bg-blue-600');
-            }
-        }
-
-        // --- SOCKET HANDLERS ---
         socket.on('final_response', (data) => {
             addMessage('BOSOM', data.message);
-            speakText(data.message, data.should_listen);
-            if (data.redirect) setTimeout(() => window.open(data.redirect, '_blank'), 1000);
+            speakText(data.message);
         });
 
         socket.on('user_speech', (data) => addMessage('You', data.message.replace('You: ', '')));
-        socket.on('status_update', (data) => statusBar.innerText = data.message);
+        socket.on('status_update', (data) => document.getElementById('status-bar').innerText = data.message);
 
-        function addMessage(sender, text) {
-            const div = document.createElement('div');
-            div.className = `p-3 rounded-lg max-w-[85%] text-sm ${sender === 'You' ? 'bg-blue-600 text-white ml-auto' : 'bg-gray-700 text-gray-200 mr-auto'}`;
-            div.innerHTML = `<strong>${sender}:</strong> ${text}`;
-            chatContainer.appendChild(div);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        function speakText(text, shouldListenNext) {
+        function speakText(text) {
             if (synth.speaking) synth.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
-            
-            utterance.onend = function() {
-                if (shouldListenNext) {
-                    statusBar.innerText = "Resume in 1.5s...";
-                    setTimeout(() => {
-                        handleMicClick(); // Triggers correct logic for both OS
-                    }, 1500);
-                } else {
-                    statusBar.innerText = "Ended.";
-                }
-            };
             synth.speak(utterance);
         }
-        
-        // Initial Start
-        socket.on('connect', () => socket.emit('start_interaction'));
+
+        function addMessage(sender, text) {
+            const container = document.getElementById('chat-container');
+            const div = document.createElement('div');
+            div.className = `p-3 rounded-lg max-w-[85%] text-xs ${sender === 'You' ? 'bg-blue-600 text-white ml-auto' : 'bg-gray-700 text-gray-200 mr-auto'}`;
+            div.innerHTML = `<strong>${sender}:</strong> ${text}`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
     </script>
 </body>
 </html>
