@@ -22,7 +22,7 @@
         <header class="mb-4 flex justify-between items-center">
             <div>
                 <h1 class="text-3xl font-bold text-blue-400">BOSOM AI</h1>
-                <p class="text-gray-400 text-xs">Gmail • Wikipedia • Gemini</p>
+                <p class="text-gray-400 text-xs">Gmail • Wikipedia • Auto-Loop</p>
             </div>
             <div id="gmail-badge" class="px-3 py-1 rounded-full text-xs bg-gray-700 text-gray-400">
                 Gmail: Disconnected
@@ -32,12 +32,10 @@
         <div id="setup-panel" class="hidden mb-4 p-4 bg-gray-700 rounded-lg border border-gray-600">
             <h3 class="font-bold text-blue-300 mb-2">Connect Gmail</h3>
             <p class="text-xs text-gray-300 mb-3">Upload 'credentials.json' from Google Cloud.</p>
-            
             <input type="file" id="cred-file" class="text-xs mb-2 text-gray-300 w-full">
             <button onclick="uploadCredentials()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs w-full mb-3">
                 1. Upload Credentials
             </button>
-
             <div id="auth-step-2" class="hidden">
                 <p class="text-xs text-yellow-300 mb-1">Action Required:</p>
                 <a id="auth-link" href="#" target="_blank" class="text-blue-300 underline text-xs block mb-2 break-all">Click here to authorize Google Access</a>
@@ -46,19 +44,17 @@
                     2. Verify Code
                 </button>
             </div>
-            
             <button onclick="toggleSetup()" class="text-gray-400 text-xs underline mt-2 w-full text-center">Close Setup</button>
         </div>
 
         <main class="flex-1 flex flex-col justify-between overflow-hidden relative">
-            
             <button onclick="toggleSetup()" class="absolute top-0 right-0 text-xs text-gray-500 hover:text-blue-400">
                 ⚙️ Setup
             </button>
 
             <div id="chat-container" class="flex-1 overflow-y-auto mb-4 mt-6 p-4 bg-gray-900 rounded-xl space-y-3 border border-gray-700">
                 <div class="text-center text-gray-600 text-xs mt-10">
-                    Try: "Do I have any emails?" or "Search Wikipedia for NASA"
+                    Tap mic to start the conversation loop.
                 </div>
             </div>
 
@@ -79,7 +75,7 @@
         const synth = window.speechSynthesis;
         let recognition;
         
-        // --- GMAIL SETUP LOGIC ---
+        // --- AUTH SETUP LOGIC ---
         function toggleSetup() {
             document.getElementById('setup-panel').classList.toggle('hidden');
         }
@@ -99,7 +95,6 @@
                 const result = await response.json();
                 
                 if(result.success) {
-                    // Show Step 2
                     document.getElementById('auth-step-2').classList.remove('hidden');
                     document.getElementById('auth-link').href = result.auth_url;
                     status.innerText = "Please authorize via the link above.";
@@ -127,7 +122,7 @@
             }
         });
 
-        // --- SPEECH LOGIC (Standard) ---
+        // --- SPEECH LOGIC (RESTORED INFINITE LOOP) ---
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = false;
@@ -150,19 +145,36 @@
             };
         }
 
-        function startLoop() { recognition.start(); }
+        // Trigger the initial greeting loop
+        function startLoop() { 
+            socket.emit('start_interaction'); 
+        }
 
         socket.on('final_response', (data) => {
             addMessage('BOSOM', data.message);
-            speakText(data.message);
+            // THIS IS THE FIX: Pass should_listen to the speak function
+            speakText(data.message, data.should_listen);
         });
 
         socket.on('user_speech', (data) => addMessage('You', data.message.replace('You: ', '')));
         socket.on('status_update', (data) => document.getElementById('status-bar').innerText = data.message);
 
-        function speakText(text) {
+        function speakText(text, shouldListenNext) {
             if (synth.speaking) synth.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
+            
+            // --- LOOP LOGIC RESTORED ---
+            utterance.onend = function() {
+                if (shouldListenNext) {
+                    document.getElementById('status-bar').innerText = "Resuming in 1.5s...";
+                    setTimeout(() => {
+                        recognition.start();
+                    }, 1500); // 1.5s delay to prevent echo
+                } else {
+                    document.getElementById('status-bar').innerText = "Conversation Ended.";
+                }
+            };
+            
             synth.speak(utterance);
         }
 
