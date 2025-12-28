@@ -132,7 +132,7 @@ def get_ai_response(text):
     
     try:
         # Using 1.5-flash for speed and reliability
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # --- MODIFIED PROMPT: Only use Wikipedia if EXPLICITLY asked ---
         prompt = f"""
