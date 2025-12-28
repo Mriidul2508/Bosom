@@ -133,7 +133,7 @@ def get_ai_response(text):
     genai.configure(api_key=api_key)
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"""
         You are BOSOM, an advanced AI assistant.
         User: "{text}"
