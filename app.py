@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-app.config['UPLOAD_FOLDER'] = '.' # Save credentials in current folder
+app.config['UPLOAD_FOLDER'] = '.' 
 
 # Threading mode for Render stability
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=90)
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
-# --- GMAIL AUTH FLOW (HEADLESS SERVER SUPPORT) ---
+# --- GMAIL AUTH FLOW ---
 def get_gmail_service():
     """Returns Gmail Service or None if not authenticated"""
     creds = None
@@ -35,7 +35,7 @@ def get_gmail_service():
         try:
             creds = Credentials.from_authorized_user_file('token.json', SCOPES)
         except:
-            os.remove('token.json') # Delete corrupted token
+            os.remove('token.json') 
             return None
 
     if not creds or not creds.valid:
@@ -45,15 +45,14 @@ def get_gmail_service():
                 with open('token.json', 'w') as token:
                     token.write(creds.to_json())
             except:
-                return None # Refresh failed
+                return None 
         else:
-            return None # Needs fresh login
+            return None 
             
     return build('gmail', 'v1', credentials=creds)
 
 @app.route('/upload_credentials', methods=['POST'])
 def upload_credentials():
-    """Step 1: User uploads credentials.json"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file part'})
     
@@ -63,24 +62,19 @@ def upload_credentials():
 
     if file:
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], 'credentials.json'))
-        
-        # Initiate Auth Flow immediately
         try:
             flow = Flow.from_client_secrets_file(
                 'credentials.json',
                 scopes=SCOPES,
-                redirect_uri='urn:ietf:wg:oauth:2.0:oob' # Special redirect for copy-paste flow
+                redirect_uri='urn:ietf:wg:oauth:2.0:oob'
             )
             auth_url, _ = flow.authorization_url(prompt='consent')
-            
-            # Send URL back to frontend so user can click it
             return jsonify({'success': True, 'auth_url': auth_url})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)})
 
 @socketio.on('submit_auth_code')
 def handle_auth_code(data):
-    """Step 2: User pastes the Google Auth Code"""
     code = data.get('code')
     try:
         flow = Flow.from_client_secrets_file(
@@ -90,11 +84,8 @@ def handle_auth_code(data):
         )
         flow.fetch_token(code=code)
         creds = flow.credentials
-        
-        # Save the permanent token
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
-            
         emit('status_update', {'message': 'Gmail Connected Successfully!'})
         emit('gmail_status', {'connected': True})
     except Exception as e:
@@ -103,12 +94,10 @@ def handle_auth_code(data):
 # --- GMAIL FUNCTIONS ---
 def check_unread_emails():
     service = get_gmail_service()
-    if not service: return "Gmail not connected. Please upload credentials."
-
+    if not service: return "Gmail not connected."
     try:
         results = service.users().messages().list(userId='me', labelIds=['UNREAD'], maxResults=3).execute()
         messages = results.get('messages', [])
-
         if not messages: return "You have no new emails."
 
         summary = "Here are your latest emails: "
@@ -117,7 +106,6 @@ def check_unread_emails():
             headers = txt['payload']['headers']
             subject = next((h['value'] for h in headers if h['name'] == 'Subject'), "No Subject")
             sender = next((h['value'] for h in headers if h['name'] == 'From'), "Unknown")
-            # Clean sender name
             sender_name = sender.split('<')[0].strip().replace('"', '')
             summary += f"From {sender_name}, Subject: {subject}. "
         return summary
@@ -128,7 +116,6 @@ def check_unread_emails():
 def send_email(to_address, subject, body):
     service = get_gmail_service()
     if not service: return "Gmail not connected."
-
     try:
         message = MIMEText(body)
         message['to'] = to_address
@@ -146,8 +133,7 @@ def get_ai_response(text):
     genai.configure(api_key=api_key)
     
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        # Instruct AI to route commands
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""
         You are BOSOM, an advanced AI assistant.
         User: "{text}"
@@ -169,10 +155,22 @@ def index():
 
 @socketio.on('connect')
 def handle_connect():
-    # Check if Gmail is already ready
     is_connected = os.path.exists('token.json')
     emit('gmail_status', {'connected': is_connected})
     emit('status_update', {'message': 'System Online.'})
+
+@socketio.on('start_interaction')
+def handle_interaction():
+    # Loop Greeting
+    hour = datetime.datetime.now().hour
+    if 0 <= hour < 12: greeting = "Good Morning!"
+    elif 12 <= hour < 18: greeting = "Good Afternoon!"
+    else: greeting = "Good Evening!"
+    
+    emit('final_response', {
+        'message': greeting + " I am listening.",
+        'should_listen': True 
+    })
 
 @socketio.on('speech_recognized')
 def handle_speech(data):
@@ -183,36 +181,46 @@ def handle_speech(data):
     emit('status_update', {'message': 'Processing...'})
 
     response_text = ""
+    should_listen = True # DEFAULT: LOOP IS ON
+
+    # CHECK QUIT COMMAND
+    if 'quit' in query.lower() or 'stop' in query.lower() or 'shut up' in query.lower():
+        should_listen = False
+        response_text = "Goodbye! Going offline."
     
-    # 1. AI Decision
-    ai_decision = get_ai_response(query)
-
-    # 2. Execution
-    if "ACTION: CHECK_EMAILS" in ai_decision:
-        emit('status_update', {'message': 'Scanning Inbox...'})
-        response_text = check_unread_emails()
-        
-    elif "ACTION: SEND_EMAIL" in ai_decision:
-        try:
-            parts = ai_decision.split('|')
-            to, sub, body = parts[1].strip(), parts[2].strip(), parts[3].strip()
-            emit('status_update', {'message': 'Sending Email...'})
-            response_text = send_email(to, sub, body)
-        except:
-            response_text = "I couldn't get the email details. Please try again."
-
-    elif "ACTION: WIKIPEDIA" in ai_decision:
-        try:
-            topic = ai_decision.split('|')[1].strip()
-            emit('status_update', {'message': f'Searching Wiki for {topic}...'})
-            response_text = wikipedia.summary(topic, sentences=2)
-        except:
-            response_text = "I couldn't find that on Wikipedia."
-
     else:
-        response_text = ai_decision
+        # 1. AI Decision
+        ai_decision = get_ai_response(query)
 
-    emit('final_response', {'message': response_text, 'should_listen': True})
+        # 2. Execution
+        if "ACTION: CHECK_EMAILS" in ai_decision:
+            emit('status_update', {'message': 'Scanning Inbox...'})
+            response_text = check_unread_emails()
+            
+        elif "ACTION: SEND_EMAIL" in ai_decision:
+            try:
+                parts = ai_decision.split('|')
+                to, sub, body = parts[1].strip(), parts[2].strip(), parts[3].strip()
+                emit('status_update', {'message': 'Sending Email...'})
+                response_text = send_email(to, sub, body)
+            except:
+                response_text = "I couldn't get the email details. Please try again."
+
+        elif "ACTION: WIKIPEDIA" in ai_decision:
+            try:
+                topic = ai_decision.split('|')[1].strip()
+                emit('status_update', {'message': f'Searching Wiki for {topic}...'})
+                response_text = wikipedia.summary(topic, sentences=2)
+            except:
+                response_text = "I couldn't find that on Wikipedia."
+
+        else:
+            response_text = ai_decision
+
+    emit('final_response', {
+        'message': response_text, 
+        'should_listen': should_listen
+    })
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
