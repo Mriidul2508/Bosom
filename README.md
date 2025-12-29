@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9%2B-yellow?style=flat&logo=python)](https://www.python.org/)
 [![Powered By](https://img.shields.io/badge/AI-Google_Gemini-magenta?style=flat&logo=google)](https://ai.google.dev/)
 
-**BOSOM AI** is a next-generation, voice-activated virtual assistant that bridges the gap between simple chatbots and functional agents. Powered by **Google Gemini (1.5/2.5 Flash)**, it employs an intelligent **"Orchestrator Pattern"** to understand natural language and execute complex tasks—like reading your emails, sending messages, or fetching real-time facts from Wikipedia—all through voice commands.
+**BOSOM AI** is a next-generation, voice-activated virtual assistant that bridges the gap between simple chatbots and functional agents. Powered by **Google Gemini 2.5 Flash**, it employs an intelligent **"Orchestrator Pattern"** to understand natural language and execute complex tasks—like reading your emails, sending messages, or fetching real-time facts from Wikipedia—all through voice commands.
 
 Uniquely designed with a **Hybrid Voice Engine**, it works seamlessly across **Android, PC (Chrome/Edge), and iOS (iPhone/iPad)** by dynamically switching between real-time streaming and audio blob processing.
 
