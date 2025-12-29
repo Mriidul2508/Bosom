@@ -6,7 +6,7 @@ Built with **Flask**, **SocketIO**, and **Google Generative AI**, it features a 
 
 ## 🚀 Key Features
 
-* **🧠 Advanced NLP Core:** Powered by **Gemini 1.5/2.5 Flash**, enabling natural, context-aware conversations.
+* **🧠 Advanced NLP Core:** Powered by **2.5 Flash**, enabling natural, context-aware conversations.
 * **🗣️ Hybrid Voice Engine:**
     * **PC/Android:** Uses Web Speech API for instant, real-time streaming.
     * **iOS (iPhone/iPad):** Uses a fallback Audio Blob recorder to ensure full compatibility with Apple devices.
