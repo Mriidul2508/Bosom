@@ -33,7 +33,7 @@ Uniquely designed with a **Hybrid Voice Engine**, it works seamlessly across **A
 ## 🛠️ Tech Stack
 
 * **Backend:** Python, Flask, Flask-SocketIO (Threading mode)
-* **AI Engine:** Google Generative AI (Gemini 1.5/2.5)
+* **AI Engine:** Google Generative AI (Gemini 2.5)
 * **APIs:** Google Gmail API, Wikipedia Library
 * **Frontend:** HTML5, JavaScript (Socket.IO client), Tailwind CSS
 * **Deployment:** Gunicorn, Render.com
